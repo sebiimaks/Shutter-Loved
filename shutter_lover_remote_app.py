@@ -252,7 +252,10 @@ class RemoteApp:
         
         # Speed setting values list for auto-increment feature
         self.speedSettingValues = ['1', '2', '4', '8', '15', '30', '60', '125', '250', '500', '1000', '2000', '4000']
+        # Values that will auto-increment (from 15 to 1000)
+        self.autoIncrementValues = ['15', '30', '60', '125', '250', '500', '1000']
         self.speedSettingIndex = 5  # Start at index 5 (value '30')
+        self.autoIncrementIndex = 1  # Start at index 1 within autoIncrementValues (value '30')
         self.autoIncrementEnabled = BooleanVar(value=False)
         self.speedCombo = None  # Reference to speed combo widget
 
@@ -307,16 +310,27 @@ class RemoteApp:
         return portNames
 
     def incrementSpeedSetting(self):
-        """ Auto-increment speed setting to the next value in the list """
+        """ Auto-increment speed setting to the next value in the limited range (15 to 1000) """
         if self.autoIncrementEnabled.get():
-            self.speedSettingIndex = (self.speedSettingIndex + 1) % len(self.speedSettingValues)
-            new_value = self.speedSettingValues[self.speedSettingIndex]
+            current_value = self.speedSetting.get()
+            # Check if current value is in the auto-increment range
+            if current_value in self.autoIncrementValues:
+                # Find current position and increment within the limited list
+                self.autoIncrementIndex = (self.autoIncrementIndex + 1) % len(self.autoIncrementValues)
+                new_value = self.autoIncrementValues[self.autoIncrementIndex]
+            else:
+                # If outside the range, start from the beginning of the range
+                self.autoIncrementIndex = 0
+                new_value = self.autoIncrementValues[self.autoIncrementIndex]
+            
             self.speedSetting.set(new_value)
             # Update the combo box display
             if self.speedCombo:
-                self.speedCombo.current(self.speedSettingIndex)
+                # Find the index in the full list
+                full_index = self.speedSettingValues.index(new_value)
+                self.speedCombo.current(full_index)
             if(DEBUG):
-                print("Speed setting incremented to: {} (index: {})".format(new_value, self.speedSettingIndex))
+                print("Speed setting incremented to: {} (range index: {})".format(new_value, self.autoIncrementIndex))
 
     def handleMultiSensorMeasure(self, data):
         # for each the dataDef definition, compute its value according to the json data dictionnary
@@ -361,6 +375,7 @@ class RemoteApp:
         self.measureId = 0
         # Reset auto-increment index to initial position
         self.speedSettingIndex = 5
+        self.autoIncrementIndex = 1  # Reset to '30' in the auto-increment range
         self.speedSetting.set(self.speedSettingValues[self.speedSettingIndex])
         if self.speedCombo:
             self.speedCombo.current(self.speedSettingIndex)
@@ -429,7 +444,7 @@ class RemoteApp:
     def on_auto_increment_toggle(self):
         """ Callback for auto-increment checkbox """
         state = "ON" if self.autoIncrementEnabled.get() else "OFF"
-        print("Auto-increment speed setting: {}".format(state))
+        print("Auto-increment speed setting (15-1000): {}".format(state))
 
     def run(self):
         """ Initialize and loop """
@@ -482,7 +497,7 @@ class RemoteApp:
         self.speedCombo.grid(row=0, column=11, padx=5, pady=5)
         
         # Auto-increment checkbox
-        autoIncrementCheckbox = ttk.Checkbutton(button_frame, text="Auto-increment", variable=self.autoIncrementEnabled, command=self.on_auto_increment_toggle)
+        autoIncrementCheckbox = ttk.Checkbutton(button_frame, text="Auto-increment (15-1000)", variable=self.autoIncrementEnabled, command=self.on_auto_increment_toggle)
         autoIncrementCheckbox.grid(row=0, column=12, padx=5, pady=5)
 
         button_frame.pack(expand=False, fill='x')
