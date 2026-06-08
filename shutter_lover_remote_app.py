@@ -309,6 +309,20 @@ class RemoteApp:
             portNames.append("--")
         return portNames
 
+    def updateAutoIncrementIndex(self):
+        """ Update the auto-increment index based on the current speed setting value """
+        current_value = self.speedSetting.get()
+        if current_value in self.autoIncrementValues:
+            # Find the index in the auto-increment range
+            self.autoIncrementIndex = self.autoIncrementValues.index(current_value)
+            if(DEBUG):
+                print("Auto-increment index updated to: {} (value: {})".format(self.autoIncrementIndex, current_value))
+        else:
+            # If outside the range, reset to start of the range
+            self.autoIncrementIndex = 0
+            if(DEBUG):
+                print("Value '{}' is outside auto-increment range. Index reset to 0 (will start from '{}')".format(current_value, self.autoIncrementValues[0]))
+
     def incrementSpeedSetting(self):
         """ Auto-increment speed setting to the next value in the limited range (15 to 1000) """
         if self.autoIncrementEnabled.get():
@@ -431,6 +445,10 @@ class RemoteApp:
             print("Change port to : " + self.portName)
         self.openSerialPort(self.portName)  
 
+    def on_speed_combo_selection(self, event):
+        """ Speed combo selection Callback - updates auto-increment index """
+        self.updateAutoIncrementIndex()
+
     def update_cb_list(self):
         self.connectionCombo['values'] = self.listSerialPorts()
 
@@ -494,6 +512,7 @@ class RemoteApp:
         self.speedCombo = ttk.Combobox(button_frame, textvariable = self.speedSetting, state='readwrite', width=8,  postcommand = self.update_cb_list)
         self.speedCombo['values']= self.speedSettingValues
         self.speedCombo.current(self.speedSettingIndex)
+        self.speedCombo.bind("<<ComboboxSelected>>", self.on_speed_combo_selection)
         self.speedCombo.grid(row=0, column=11, padx=5, pady=5)
         
         # Auto-increment checkbox
