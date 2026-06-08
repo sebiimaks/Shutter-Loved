@@ -254,6 +254,7 @@ class RemoteApp:
         self.speedSettingValues = ['1', '2', '4', '8', '15', '30', '60', '125', '250', '500', '1000', '2000', '4000']
         self.speedSettingIndex = 5  # Start at index 5 (value '30')
         self.autoIncrementEnabled = BooleanVar(value=False)
+        self.speedCombo = None  # Reference to speed combo widget
 
         # This is the columns definition : column and data id (internal identification of the culmn, must be unique), column name, column width, value format, value computation function that use [...]
         # You can freely change the order, or even remove you the column of your choice.
@@ -311,8 +312,11 @@ class RemoteApp:
             self.speedSettingIndex = (self.speedSettingIndex + 1) % len(self.speedSettingValues)
             new_value = self.speedSettingValues[self.speedSettingIndex]
             self.speedSetting.set(new_value)
+            # Update the combo box display
+            if self.speedCombo:
+                self.speedCombo.current(self.speedSettingIndex)
             if(DEBUG):
-                print("Speed setting incremented to: {}".format(new_value))
+                print("Speed setting incremented to: {} (index: {})".format(new_value, self.speedSettingIndex))
 
     def handleMultiSensorMeasure(self, data):
         # for each the dataDef definition, compute its value according to the json data dictionnary
@@ -355,6 +359,13 @@ class RemoteApp:
         self.document.clear()
         # Reset counter
         self.measureId = 0
+        # Reset auto-increment index to initial position
+        self.speedSettingIndex = 5
+        self.speedSetting.set(self.speedSettingValues[self.speedSettingIndex])
+        if self.speedCombo:
+            self.speedCombo.current(self.speedSettingIndex)
+        if(DEBUG):
+            print("All data cleared. Speed setting reset to index 5 ({})".format(self.speedSettingValues[self.speedSettingIndex]))
 
     def string_out(self, rows, separator='\t', line_feed='\n'):
         """ Prepares a string to send to the clipboard. """
@@ -465,10 +476,10 @@ class RemoteApp:
         # Camera speed setting
         ttk.Separator(master=button_frame, orient=VERTICAL, style='TSeparator', class_= ttk.Separator,takefocus= 0).grid(row=0, column=9, padx=5, pady=0)
         Label(button_frame, text="Camera Speed setting (1/s):").grid(row=0, column=10, padx=7, pady=5)
-        speedCombo = ttk.Combobox(button_frame, textvariable = self.speedSetting, state='readwrite', width=8,  postcommand = self.update_cb_list)
-        speedCombo['values']= self.speedSettingValues
-        speedCombo.current(self.speedSettingIndex)
-        speedCombo.grid(row=0, column=11, padx=5, pady=5)
+        self.speedCombo = ttk.Combobox(button_frame, textvariable = self.speedSetting, state='readwrite', width=8,  postcommand = self.update_cb_list)
+        self.speedCombo['values']= self.speedSettingValues
+        self.speedCombo.current(self.speedSettingIndex)
+        self.speedCombo.grid(row=0, column=11, padx=5, pady=5)
         
         # Auto-increment checkbox
         autoIncrementCheckbox = ttk.Checkbutton(button_frame, text="Auto-increment", variable=self.autoIncrementEnabled, command=self.on_auto_increment_toggle)
