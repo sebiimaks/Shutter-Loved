@@ -7,7 +7,7 @@
 """
 __author__ = "Sebastien ROY"
 __license__ = "GPL"
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 __status__ = "Released"
 
 import threading
@@ -249,8 +249,13 @@ class RemoteApp:
         self.selectedDirection = StringVar()
         self.extrapolation_factor = 24.0 / 20.0 # extrapolation from 20mm to 24mm (vertical direction)
         self.speedSetting = StringVar(value='60')
+        
+        # Speed setting values list for auto-increment feature
+        self.speedSettingValues = ['1', '2', '4', '8', '15', '30', '60', '125', '250', '500', '1000', '2000', '4000']
+        self.speedSettingIndex = 5  # Start at index 5 (value '30')
+        self.autoIncrementEnabled = BooleanVar(value=False)
 
-        # This is the columns definition : column and data id (internal identification of the culmn, must be unique), column name, column width, value format, value computation function that use json data
+        # This is the columns definition : column and data id (internal identification of the culmn, must be unique), column name, column width, value format, value computation function that use [...]
         # You can freely change the order, or even remove you the column of your choice.
         # To remove a column, you can either remove the related line or change it as a comment, by adding a '#' character at the beginning of the line
         self.dataDefs = [
@@ -300,6 +305,15 @@ class RemoteApp:
             portNames.append("--")
         return portNames
 
+    def incrementSpeedSetting(self):
+        """ Auto-increment speed setting to the next value in the list """
+        if self.autoIncrementEnabled.get():
+            self.speedSettingIndex = (self.speedSettingIndex + 1) % len(self.speedSettingValues)
+            new_value = self.speedSettingValues[self.speedSettingIndex]
+            self.speedSetting.set(new_value)
+            if(DEBUG):
+                print("Speed setting incremented to: {}".format(new_value))
+
     def handleMultiSensorMeasure(self, data):
         # for each the dataDef definition, compute its value according to the json data dictionnary
         # and add the resulting value to the dictionnary with the defined key
@@ -313,6 +327,9 @@ class RemoteApp:
         rowValues = [(dataDef.strValue(data[dataDef.id])) for dataDef in self.dataDefs]
         item = tree.insert(parent='', index='end', iid=data['id'],text='', values=rowValues)
         tree.see(item)
+        
+        # Auto-increment speed setting if enabled
+        self.incrementSpeedSetting()
 
 
     def dataEvent(self, event):
@@ -398,6 +415,11 @@ class RemoteApp:
             self.extrapolation_factor = 36.0 / 32.0
         print("Selected Direction: {}, extrapolation factor = {}".format(self.selectedDirection.get(), self.extrapolation_factor) )
 
+    def on_auto_increment_toggle(self):
+        """ Callback for auto-increment checkbox """
+        state = "ON" if self.autoIncrementEnabled.get() else "OFF"
+        print("Auto-increment speed setting: {}".format(state))
+
     def run(self):
         """ Initialize and loop """
 
@@ -444,8 +466,13 @@ class RemoteApp:
         ttk.Separator(master=button_frame, orient=VERTICAL, style='TSeparator', class_= ttk.Separator,takefocus= 0).grid(row=0, column=9, padx=5, pady=0)
         Label(button_frame, text="Camera Speed setting (1/s):").grid(row=0, column=10, padx=7, pady=5)
         speedCombo = ttk.Combobox(button_frame, textvariable = self.speedSetting, state='readwrite', width=8,  postcommand = self.update_cb_list)
-        speedCombo['values']= ['1', '2', '4', '8', '15', '30', '60', '125', '250', '500', '1000', '2000', '4000']
+        speedCombo['values']= self.speedSettingValues
+        speedCombo.current(self.speedSettingIndex)
         speedCombo.grid(row=0, column=11, padx=5, pady=5)
+        
+        # Auto-increment checkbox
+        autoIncrementCheckbox = ttk.Checkbutton(button_frame, text="Auto-increment", variable=self.autoIncrementEnabled, command=self.on_auto_increment_toggle)
+        autoIncrementCheckbox.grid(row=0, column=12, padx=5, pady=5)
 
         button_frame.pack(expand=False, fill='x')
         
