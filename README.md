@@ -2,7 +2,7 @@
 
 ## Shutter Loved — native macOS app (alpha)
 
-Shutter Loved is a native SwiftUI fork created by Sebastian Maderak for Apple Silicon, developed in [`macos/`](macos/README.md). The alpha includes measurement capture, a tested-camera database, Armarium exchange, reports, contextual explanations and model-specific tester guides. See the [build and usage instructions](macos/README.md) and [release plan](docs/MACOS_NATIVE_APP_PLAN.md). Wider hardware qualification and public-release signing remain pending.
+Shutter Loved is a native SwiftUI fork created by sebiimaks for Apple Silicon, developed in [`macos/`](macos/README.md). The alpha includes measurement capture, a tested-camera database, Armarium exchange, reports, contextual explanations and model-specific tester guides. See the [build and usage instructions](macos/README.md) and [release plan](docs/MACOS_NATIVE_APP_PLAN.md). Wider hardware qualification and public-release signing remain pending.
 
 This fork builds on [Shutter Lover Remote App by Sébastien Roy](https://github.com/sebastienroy/shutter_lover_remote_app). The original Python application, attribution and GPL v3 license are retained below.
 
