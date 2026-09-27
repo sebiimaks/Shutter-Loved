@@ -1,0 +1,36 @@
+{
+  "format": "org.armarium-lucis.shutter-tester",
+  "version": 1,
+  "kind": "cameraCatalog",
+  "createdAt": "2026-09-27T10:00:00Z",
+  "source": {
+    "libraryID": "22CA47B6-D6BE-4EA9-A50A-C9AF3D81F091",
+    "application": "Armarium Lucis"
+  },
+  "requiredCapabilities": [],
+  "cameras": [{
+    "id": "81466045-3803-4C94-9B12-4659D8949201",
+    "revision": 1,
+    "name": "Synthetic demonstration camera",
+    "manufacturer": "Example manufacturer",
+    "model": "Example model",
+    "inventoryID": "DEMO-001",
+    "mount": "",
+    "camera": { "type": "SLR", "captureMedium": "Film", "format": "35 mm" },
+    "shutter": {
+      "architecture": "Focal-plane",
+      "location": "Camera body",
+      "timingControl": "Mechanically timed",
+      "construction": "Flexible curtains",
+      "material": "",
+      "maker": "",
+      "model": "",
+      "travelDirection": "Horizontal",
+      "speedRange": "1 s–1/1000 s",
+      "modes": "B",
+      "powerRequirements": "",
+      "batteryFallback": "",
+      "flashSync": ""
+    }
+  }]
+}

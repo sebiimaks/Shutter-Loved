@@ -1,0 +1,28 @@
+{
+  "format": "org.armarium-lucis.shutter-tester",
+  "version": 1,
+  "kind": "testResults",
+  "createdAt": "2026-09-27T10:20:00Z",
+  "source": {
+    "libraryID": "6833081D-4994-475D-9AF3-EAD2C0EB1811",
+    "application": "Independent synthetic fixture",
+    "version": "1.0"
+  },
+  "requiredCapabilities": ["shutter-timing-v1"],
+  "cameraCatalogueID": "22CA47B6-D6BE-4EA9-A50A-C9AF3D81F091",
+  "tests": [{
+    "id": "23C3E811-BC98-41BF-8CAB-44BB695E6FE2",
+    "cameraID": "81466045-3803-4C94-9B12-4659D8949201",
+    "revision": 1,
+    "title": "Synthetic 1/125 s timing example",
+    "performedAt": "2026-09-27T10:15:00Z",
+    "testType": "shutterTiming",
+    "measurements": [
+      { "quantity": "exposureDuration", "value": 0.0082, "unit": "s", "nominalValue": 0.008, "position": "centre", "sampleIndex": 1 },
+      { "quantity": "exposureDuration", "value": 0.0081, "unit": "s", "nominalValue": 0.008, "position": "centre", "sampleIndex": 2 }
+    ],
+    "tester": { "manufacturer": "Example", "model": "Synthetic fixture", "firmware": "1.0" },
+    "conditions": { "lightSource": "LED", "temperatureCelsius": 22 },
+    "notes": "Demonstration data only. These are invented measurements, not evidence about a real camera. This fixture will correctly appear unmatched in an unrelated collection."
+  }]
+}

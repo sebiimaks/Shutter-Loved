@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Shutter Loved</string>
+  <key>CFBundleDisplayName</key><string>Shutter Loved</string>
+  <key>CFBundleExecutable</key><string>ShutterLover</string>
+  <key>CFBundleIdentifier</key><string>com.shutterlover.mac</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.2.3</string>
+  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSHumanReadableCopyright</key><string>This fork was created by Sebastian Maderak. Based on Shutter Lover by Sébastien Roy. Distributed under GPL v3; see bundled LICENSE.</string>
+  <key>UTExportedTypeDeclarations</key><array><dict>
+    <key>UTTypeIdentifier</key><string>com.shutterlover.session</string>
+    <key>UTTypeDescription</key><string>Shutter Loved Session</string>
+    <key>UTTypeConformsTo</key><array><string>public.json</string></array>
+    <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>shutterlover</string></array></dict>
+  </dict><dict>
+    <key>UTTypeIdentifier</key><string>com.shutterlover.camera-archive</string>
+    <key>UTTypeDescription</key><string>Shutter Loved Camera Archive</string>
+    <key>UTTypeConformsTo</key><array><string>public.json</string></array>
+    <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>shuttercamera</string></array></dict>
+  </dict></array>
+</dict></plist>

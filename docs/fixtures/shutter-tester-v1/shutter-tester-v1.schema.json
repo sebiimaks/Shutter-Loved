@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:armarium-lucis:shutter-tester:1",
+  "title": "Armarium Lucis Shutter Tester JSON, version 1",
+  "description": "A vendor-neutral application format, not an established industry standard. Application validation additionally enforces byte limits, duplicate keys, numeric finiteness and identity/revision rules.",
+  "oneOf": [
+    { "$ref": "#/$defs/cameraCatalog" },
+    { "$ref": "#/$defs/testResults" }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "timestamp": { "type": "string", "format": "date-time", "maxLength": 64, "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$" },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+    "text": { "type": "string", "maxLength": 65536 },
+    "shortText": { "type": "string", "maxLength": 512 },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["libraryID", "application"],
+      "properties": {
+        "libraryID": { "$ref": "#/$defs/uuid" },
+        "application": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S" },
+        "version": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "capabilities": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "enum": ["shutter-timing-v1"] } },
+    "cameraCatalog": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "version", "kind", "createdAt", "source", "cameras"],
+      "properties": {
+        "format": { "const": "org.armarium-lucis.shutter-tester" }, "version": { "const": 1 }, "kind": { "const": "cameraCatalog" },
+        "createdAt": { "$ref": "#/$defs/timestamp" }, "source": { "$ref": "#/$defs/source" },
+        "requiredCapabilities": { "$ref": "#/$defs/capabilities" },
+        "cameras": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/$defs/camera" } }
+      }
+    },
+    "camera": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "revision", "name", "manufacturer", "model", "inventoryID", "mount", "camera", "shutter"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" }, "revision": { "$ref": "#/$defs/revision" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" },
+        "manufacturer": { "$ref": "#/$defs/text" }, "model": { "$ref": "#/$defs/text" },
+        "inventoryID": { "$ref": "#/$defs/text" }, "mount": { "$ref": "#/$defs/text" }, "serial": { "$ref": "#/$defs/text" },
+        "camera": {
+          "type": "object", "additionalProperties": false, "required": ["type", "captureMedium", "format"],
+          "properties": { "type": { "$ref": "#/$defs/text" }, "captureMedium": { "$ref": "#/$defs/text" }, "format": { "$ref": "#/$defs/text" } }
+        },
+        "shutter": {
+          "type": "object", "additionalProperties": false,
+          "required": ["architecture", "location", "timingControl", "construction", "material", "maker", "model", "travelDirection", "speedRange", "modes", "powerRequirements", "batteryFallback", "flashSync"],
+          "properties": {
+            "architecture": { "$ref": "#/$defs/text" }, "location": { "$ref": "#/$defs/text" },
+            "timingControl": { "$ref": "#/$defs/text" }, "construction": { "$ref": "#/$defs/text" },
+            "material": { "$ref": "#/$defs/text" }, "maker": { "$ref": "#/$defs/text" }, "model": { "$ref": "#/$defs/text" },
+            "travelDirection": { "$ref": "#/$defs/text" }, "speedRange": { "$ref": "#/$defs/text" }, "modes": { "$ref": "#/$defs/text" },
+            "powerRequirements": { "$ref": "#/$defs/text" }, "batteryFallback": { "$ref": "#/$defs/text" }, "flashSync": { "$ref": "#/$defs/text" }
+          }
+        }
+      }
+    },
+    "testResults": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "version", "kind", "createdAt", "source", "cameraCatalogueID", "tests"],
+      "properties": {
+        "format": { "const": "org.armarium-lucis.shutter-tester" }, "version": { "const": 1 }, "kind": { "const": "testResults" },
+        "createdAt": { "$ref": "#/$defs/timestamp" }, "source": { "$ref": "#/$defs/source" },
+        "requiredCapabilities": { "$ref": "#/$defs/capabilities" }, "cameraCatalogueID": { "$ref": "#/$defs/uuid" },
+        "tests": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/$defs/test" } }
+      }
+    },
+    "test": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "cameraID", "revision", "title", "performedAt", "testType", "measurements"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" }, "cameraID": { "$ref": "#/$defs/uuid" }, "revision": { "$ref": "#/$defs/revision" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" },
+        "performedAt": { "$ref": "#/$defs/timestamp" }, "testType": { "const": "shutterTiming" },
+        "measurements": { "type": "array", "minItems": 1, "maxItems": 512, "items": { "$ref": "#/$defs/measurement" } },
+        "tester": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "manufacturer": { "$ref": "#/$defs/shortText" }, "model": { "$ref": "#/$defs/shortText" },
+            "serial": { "$ref": "#/$defs/shortText" }, "firmware": { "$ref": "#/$defs/shortText" }
+          }
+        },
+        "conditions": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "lightSource": { "$ref": "#/$defs/shortText" },
+            "temperatureCelsius": { "type": "number", "minimum": -273.15, "maximum": 1000 },
+            "notes": { "type": "string", "maxLength": 16384 }
+          }
+        },
+        "notes": { "type": "string", "maxLength": 16384 }
+      }
+    },
+    "measurement": {
+      "type": "object", "additionalProperties": false, "required": ["quantity", "value", "unit"],
+      "properties": {
+        "quantity": { "enum": ["exposureDuration", "curtainTravelDuration", "flashDelay"] },
+        "value": { "type": "number", "minimum": -1000000000000, "maximum": 1000000000000 },
+        "unit": { "const": "s" }, "nominalValue": { "type": "number", "minimum": -1000000000000, "maximum": 1000000000000 },
+        "position": { "type": "string", "maxLength": 128 }, "sampleIndex": { "type": "integer", "minimum": 1, "maximum": 10000 }
+      },
+      "allOf": [{
+        "if": { "properties": { "quantity": { "enum": ["exposureDuration", "curtainTravelDuration"] } } },
+        "then": { "properties": { "value": { "exclusiveMinimum": 0 }, "nominalValue": { "exclusiveMinimum": 0 } } }
+      }]
+    }
+  }
+}
