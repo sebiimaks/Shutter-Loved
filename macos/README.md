@@ -92,7 +92,7 @@ Full camera archives and local library snapshots are limited to 64 MiB; exchange
 
 | Tester | In this alpha | Official instructions |
 | --- | --- | --- |
-| Shutter Lover | `MultiSensorMeasure` USB reader, optional saved equipment identity. A physical connection succeeded in an earlier build; this update still requires hardware qualification. | [English manual 1.1.0](https://photographyelectronics.com/wp-content/uploads/2025/06/ShutterLover_UserManual_en_1.1.0_-_Release.pdf), [interface specification](https://github.com/sebastienroy/shutter_lover_remote_app/wiki/Interface-Specifications) |
+| Shutter Lover | `MultiSensorMeasure` USB reader, optional saved equipment identity. The user tested this update with a physical Shutter Lover and confirmed successful recognition. | [English manual 1.1.0](https://photographyelectronics.com/wp-content/uploads/2025/06/ShutterLover_UserManual_en_1.1.0_-_Release.pdf), [interface specification](https://github.com/sebastienroy/shutter_lover_remote_app/wiki/Interface-Specifications) |
 | Baby Shutter Tester Mk I | Manual display readings; original model, firmware-specific calibration. | [Manufacturer manual index](https://github.com/sebastienroy/shutter_speed_tester/wiki/Shutter-Testers-documentation), [English manual 2.0.1](https://github.com/sebastienroy/shutter_speed_tester/blob/master/baby_shutter_tester/documentation/2.0.1/BabyShutterTester_UserManual_en_2.0.1_--.pdf) |
 | Baby Shutter Tester Mk II | Manual effective-exposure readings, optional mode/E₀. Automatic USB capture is not implemented in this app. | [English manual 1.0.0-B, firmware 1.0.0](https://photographyelectronics.com/wp-content/uploads/2025/08/BabyShutterTester_mkII_UserManual_en_1.0.0_-B.pdf), [firmware history](https://photographyelectronics.com/resources/firmware-update/) |
 
@@ -118,7 +118,7 @@ Interchange has also been verified against Armarium's published JSON Schema and,
 
 ## Remaining release work
 
-- Repeat physical capture, USB identity and reconnect qualification for this update, including USB hubs, sleep/wake and the macOS 14 baseline. Verify serial parameters and DTR/RTS/open behavior across firmware versions. The 9600/8N1 setting is inherited from the Python client's defaults. Reconnection can follow a unique recorded USB identity; devices without one require explicit selection.
+- Successful recognition with a physical Shutter Lover is user-verified for this update. Broader capture and reconnect coverage remains for USB hubs, sleep/wake, the macOS 14 baseline and different firmware versions, including serial parameters and DTR/RTS/open behavior. The 9600/8N1 setting is inherited from the Python client's defaults. Reconnection can follow a unique recorded USB identity; devices without one require explicit selection.
 - Qualify photo drag/drop; add manual crop positioning/zoom and service-document attachments. Fit/fill photo presentation, text service records and before/after links are available now.
 - Add configurable repeated sweep control, richer comparison visualisations and optional individual-reading PDF appendices. Current coverage targets and comparisons are informational.
 - Implement automatic Baby Mk II acquisition separately. Manual recording and USB equipment associations are available; they do not decode the Baby USB protocol.
