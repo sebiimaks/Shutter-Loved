@@ -106,7 +106,8 @@ extension AppModel {
     func importCameraArchive() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.shutterCameraArchive, .json]
-        panel.message = "Import a full Shutter Loved camera archive as a separate copy. Armarium camera catalogues use the other import command."
+        panel.message = "Import a full Shutter Loved camera archive as a separate copy."
+            + (LucisIntegration.isEnabled ? " Armarium camera catalogues use the other import command." : "")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max

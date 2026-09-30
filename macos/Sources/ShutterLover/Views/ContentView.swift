@@ -108,7 +108,12 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                 }
-                if visibleCameras.isEmpty { Text(cameraSearch.isEmpty ? "Add a camera or import your Armarium catalogue." : "No matching cameras.").font(.caption).foregroundStyle(.secondary) }
+                if visibleCameras.isEmpty {
+                    Text(cameraSearch.isEmpty
+                         ? (LucisIntegration.isEnabled ? "Add a camera or import your Armarium catalogue." : "Add a camera to start your library.")
+                         : "No matching cameras.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Unassigned tests & demos") {
                 if model.demoSessionCount > 0 {
@@ -201,7 +206,9 @@ struct ContentView: View {
                     Label("Add camera", systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
-                Button("Import Armarium cameras…", action: model.importCameraCatalogue).font(.caption)
+                if LucisIntegration.isEnabled {
+                    Button("Import Armarium cameras…", action: model.importCameraCatalogue).font(.caption)
+                }
                 Text("Readings stay on this Mac until you export them.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -217,8 +224,10 @@ struct ContentView: View {
         } actions: {
             HStack(spacing: 12) {
                 Button("Add camera", action: model.newCamera).buttonStyle(.borderedProminent)
-                Button("Import Armarium camera catalogue…", action: model.importCameraCatalogue)
-                    .buttonStyle(.bordered)
+                if LucisIntegration.isEnabled {
+                    Button("Import Armarium camera catalogue…", action: model.importCameraCatalogue)
+                        .buttonStyle(.bordered)
+                }
             }
             .fixedSize()
             .frame(maxWidth: .infinity, alignment: .center)
@@ -272,7 +281,9 @@ struct ContentView: View {
                     model.showGuide = false
                 }
                 Divider()
-                Button("Import Armarium cameras…", action: model.importCameraCatalogue)
+                if LucisIntegration.isEnabled {
+                    Button("Import Armarium cameras…", action: model.importCameraCatalogue)
+                }
                 Button("Import full camera archive as a copy…", action: model.importCameraArchive)
                 Button("Import legacy session as a copy…", systemImage: "square.and.arrow.down") { model.importSession() }
             } label: {
@@ -282,7 +293,7 @@ struct ContentView: View {
 
             if !model.showCameraLibrary && !model.showGuide {
               Menu {
-                if let session = model.currentSession {
+                if LucisIntegration.isEnabled, let session = model.currentSession {
                     Button("Test results for Armarium (JSON)…") { model.exportTesterResults(session.id) }
                 }
                 Button("Export complete session…", systemImage: "doc") { model.exportSession() }

@@ -54,7 +54,8 @@ struct MeasurementWorkspaceView: View {
                 Button("Cancel", role: .cancel) { pendingAssignment = nil }
             }
         } message: {
-            Text("Choose the camera that produced these readings. The original name and measurements are retained, and the date of this assignment is recorded. An Armarium-linked camera enables results export back to that exact catalogue item.")
+            Text("Choose the camera that produced these readings. The original name and measurements are retained, and the date of this assignment is recorded."
+                 + (LucisIntegration.isEnabled ? " An Armarium-linked camera enables results export back to that exact catalogue item." : ""))
         }
     }
 
@@ -80,7 +81,9 @@ struct MeasurementWorkspaceView: View {
                         }
                         Divider()
                         Button("Add a camera first…", action: model.newCamera)
-                        Button("Import Armarium camera catalogue…", action: model.importCameraCatalogue)
+                        if LucisIntegration.isEnabled {
+                            Button("Import Armarium camera catalogue…", action: model.importCameraCatalogue)
+                        }
                     }
                     .fixedSize()
                     .help("Choose the physical camera tested. Names are never matched automatically.")

@@ -172,7 +172,7 @@ enum ShutterTesterExchange {
         if let notes = session.testConditions, !notes.isEmpty { conditions["notes"] = notes }
         if !conditions.isEmpty { test["conditions"] = conditions }
         let envelope: [String: Any] = ["format": format, "version": 1, "kind": "testResults", "createdAt": timestamp(createdAt),
-                                       "source": ["libraryID": producerLibraryID.uuidString.lowercased(), "application": "Shutter Loved", "version": "0.3.3"],
+                                       "source": ["libraryID": producerLibraryID.uuidString.lowercased(), "application": "Shutter Loved", "version": "0.3.4"],
                                        "requiredCapabilities": ["shutter-timing-v1"], "cameraCatalogueID": catalogueID.uuidString.lowercased(), "tests": [test]]
         let data = try JSONSerialization.data(withJSONObject: envelope, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try validateResults(data)

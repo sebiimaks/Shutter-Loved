@@ -1,6 +1,6 @@
-# Shutter Loved for macOS — 0.3.3 alpha
+# Shutter Loved for macOS — 0.3.4 alpha
 
-A native SwiftUI app for Apple Silicon and macOS 14 or later. This fork was created by Sebastian Maderak, based on Shutter Lover by Sébastien Roy. Version 0.3.3 reorganises the measurement workspace into a fixed compact setup area, visible result summaries and a separate readings table. Positioning details, notes and speed coverage open on demand. It retains automatic mount-based positioning guidance, an editable flange-distance table in Settings and a camera mount chooser. It retains calibration certificates, manual Baby results and tester inventory. Reading explanations are off by default. The app includes a tested-camera database, 3:2 photographs, dated test history, comparisons, service records, PDF reports, recoverable test Trash and Armarium Lucis interchange. See the [tester and manual-entry guide](../docs/TESTER_INVENTORY_AND_MANUAL_ENTRY.md), [native app plan](../docs/MACOS_NATIVE_APP_PLAN.md) and [approved camera database design](../docs/CAMERA_DATABASE_PROPOSAL.md).
+A native SwiftUI app for Apple Silicon and macOS 14 or later. This fork was created by Sebastian Maderak, based on Shutter Lover by Sébastien Roy. Version 0.3.4 temporarily hides Armarium import/export controls on main while preserving them on `lucis-integration`. The app uses a measurement workspace with a fixed compact setup area, visible result summaries and a separate readings table. Positioning details, notes and speed coverage open on demand. It retains automatic mount-based positioning guidance, an editable flange-distance table in Settings and a camera mount chooser. It retains calibration certificates, manual Baby results and tester inventory. Reading explanations are off by default. The app includes a tested-camera database, 3:2 photographs, dated test history, comparisons, service records, PDF reports, recoverable test Trash and retained Armarium interchange data. See the [tester and manual-entry guide](../docs/TESTER_INVENTORY_AND_MANUAL_ENTRY.md), [native app plan](../docs/MACOS_NATIVE_APP_PLAN.md) and [approved camera database design](../docs/CAMERA_DATABASE_PROPOSAL.md).
 
 ## Build and run
 
@@ -18,14 +18,14 @@ For development, open `Package.swift` in Xcode, or use `swift build` / `swift ru
 
 ## Cameras and tests
 
-1. Choose **Add camera** in the sidebar, or **Import Armarium cameras…** to review an exported Armarium catalogue. Create one record per physical camera; matching names or serial numbers never merge bodies automatically.
+1. Choose **Add camera** in the sidebar. On `lucis-integration`, **Import Armarium cameras…** can also review an exported Armarium catalogue. Create one record per physical camera; matching names or serial numbers never merge bodies automatically.
 2. Enter a display name and any useful identity, format, shutter, lens, condition, acquisition, storage and default-test details. Unknown values can stay blank. Search finds names, make/model, serials, collection IDs, nicknames and tags.
 3. Click **Add camera photo** to choose a local image. The app retains the original and a bounded display copy. Choose **Crop to fill** or **Fit entire photo** inside the 3:2 frame. Manual crop positioning/zoom is a follow-up. File-URL drag/drop is implemented but still needs native smoke testing.
 4. Choose **New test** on that camera. Set a title, operator, lighting, conditions, planned speeds, repeat target and timing tolerance through **Edit test details**. Repeat targets describe coverage; they do not automate physical shutter release or certify a camera's condition.
-5. Choose **Tester for next reading**. For Shutter Lover, use **Connect tester**, select its USB serial port and optional owned tester, then click **Connect**. Use a data cable, close another application using that port, then physically reset the Shutter Lover and release the camera shutter. For a Baby model, choose **Add manual reading…** and copy its displayed result. The app never opens an arbitrary first port or sends device commands.
+5. Choose **Tester**. For Shutter Lover, use **Connect tester**, select its USB serial port and optional owned tester, then click **Connect**. Use a data cable, close another application using that port, then physically reset the Shutter Lover and release the camera shutter. For a Baby model, choose **Add manual reading…** and copy its displayed result. The app never opens an arbitrary first port or sends device commands.
 6. Browse **Results**, **Test history**, **Camera details**, and **Service & notes**. Results belong to the selected dated test. Inspect original readings for every sensor metric, explanations, raw packets, exclusions and setting corrections. Compare two tests explicitly, or link before/after tests to a service event.
 
-Existing sessions appear in **Unassigned tests**. Open one and choose **Assign this test to a camera**, then confirm the physical camera. This retains the original camera label, records the assignment time and adds that provenance to an Armarium export. Demo sessions stay separate and cannot be assigned as real camera evidence.
+Existing sessions appear in **Unassigned tests**. Open one and choose **Assign camera…**, then confirm the physical camera. This retains the original camera label, records the assignment time and adds that provenance to an Armarium export. Demo sessions stay separate and cannot be assigned as real camera evidence.
 
 Browsing a camera or historical test does not redirect incoming measurements. The persistent **Recording to…** indicator names the active destination; **Return to live test** returns there. Starting a new camera test or choosing **Record into this test** explicitly changes the destination.
 
@@ -54,6 +54,8 @@ Use **File → New Baby Tester Test**, or create a camera test and select a Baby
 Use separate tests for different tester models and for Baby manual versus Shutter Lover USB measurements. Existing USB readings identify the Shutter Lover model from their packet format, while the individual tester remains unrecorded unless it was captured explicitly. The new inventory is never assigned retroactively to those readings.
 
 ## Armarium Lucis workflow
+
+These controls are available on the **`lucis-integration` branch**. On **main**, Armarium import/export buttons are hidden and **File → Import Camera Catalogue…** is greyed out. Existing camera links and evidence remain stored. Main updates are automatically merged into the integration branch by GitHub Actions; see [branch maintenance and reintegration](../docs/LUCIS_INTEGRATION_BRANCH.md).
 
 1. In Armarium Lucis, export the selected physical cameras using its **Shutter Tester** command.
 2. In Shutter Loved, choose **Import Armarium cameras…** and review the batch. New identities create camera records; newer profile revisions update catalogue-owned descriptions while retaining local photos, notes, services and tests. Identical revisions are no-ops, older revisions are skipped and conflicts block the entire batch.

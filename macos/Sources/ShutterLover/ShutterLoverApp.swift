@@ -22,7 +22,13 @@ struct ShutterLoverApp: App {
                 Button("My Testers…") { model.showTesters = true }
                 Button("New Demo Session") { model.newSession(demo: true) }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Divider()
-                Button("Import Armarium Camera Catalogue…", action: model.importCameraCatalogue).keyboardShortcut("o")
+                if LucisIntegration.isEnabled {
+                    Button("Import Armarium Camera Catalogue…", action: model.importCameraCatalogue).keyboardShortcut("o")
+                } else {
+                    Button("Import Camera Catalogue…") {}
+                        .keyboardShortcut("o")
+                        .disabled(true)
+                }
                 Button("Import Camera Archive as a Copy…", action: model.importCameraArchive)
                 Button("Import Legacy Session as a Copy…", action: model.importSession)
                 Divider()
@@ -31,7 +37,9 @@ struct ShutterLoverApp: App {
                 }
                 .disabled(model.showCameraLibrary || model.showGuide || model.currentSession.map { !model.canTrashSession($0.id) } != false)
                 if !model.showCameraLibrary && !model.showGuide, let session = model.currentSession {
-                    Button("Export Test for Armarium (JSON)…") { model.exportTesterResults(session.id) }
+                    if LucisIntegration.isEnabled {
+                        Button("Export Test for Armarium (JSON)…") { model.exportTesterResults(session.id) }
+                    }
                     Button("Export Session…", action: model.exportSession).keyboardShortcut("s", modifiers: [.command, .shift])
                     Button("Export CSV…", action: model.exportCSV)
                 }

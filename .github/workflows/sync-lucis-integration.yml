@@ -1,0 +1,69 @@
+name: Sync lucis-integration
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-lucis-integration
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge current main into the integration branch
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # A deleted integration branch must not be silently recreated.
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/lucis-integration:refs/remotes/origin/lucis-integration'
+          git switch --create lucis-integration refs/remotes/origin/lucis-integration
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'lucis-integration already contains current main.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            if ! git merge --no-edit origin/main; then
+              echo '### Sync stopped: merge conflict' >> "$GITHUB_STEP_SUMMARY"
+              echo 'Resolve the merge on lucis-integration, preserving its enabled UI, then rerun this workflow.' >> "$GITHUB_STEP_SUMMARY"
+              git diff --name-only --diff-filter=U >> "$GITHUB_STEP_SUMMARY"
+              git merge --abort
+              exit 1
+            fi
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+          # Never publish a merge that disables the branch's integration UI.
+          if ! grep -Eq '^    static let isEnabled = true$' macos/Sources/ShutterLover/LucisIntegration.swift; then
+            echo '::error::Integration UI is not enabled; refusing to update lucis-integration.'
+            echo 'Sync stopped: restore isEnabled = true in LucisIntegration.swift on the integration branch before retrying.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Test the merged app
+        if: steps.merge.outputs.changed == 'true'
+        run: swift test --package-path macos
+
+      - name: Push without overwriting concurrent branch changes
+        if: steps.merge.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:refs/heads/lucis-integration
+          echo 'Merged current main into lucis-integration; Swift tests passed and integration UI remains enabled.' >> "$GITHUB_STEP_SUMMARY"

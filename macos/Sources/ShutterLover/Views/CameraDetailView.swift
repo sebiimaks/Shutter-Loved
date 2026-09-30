@@ -152,8 +152,10 @@ struct CameraDetailView: View {
                 Button("Edit test details…") { editingTest = test }
                 Button("Inspect original readings") { model.openCameraTest(test.id) }
                 Button("Save photo report…") { if let camera { model.exportCameraReport(camera.id, sessionID: test.id) } }
-                Button("Export ArmariumLucis results…") { model.exportTesterResults(test.id) }
-                    .disabled(test.demo || test.cameraSnapshot?.catalogueCameraID == nil)
+                if LucisIntegration.isEnabled {
+                    Button("Export ArmariumLucis results…") { model.exportTesterResults(test.id) }
+                        .disabled(test.demo || test.cameraSnapshot?.catalogueCameraID == nil)
+                }
                 Divider()
                 Button("Delete test…", role: .destructive) { model.pendingDeleteSessionID = test.id }
                     .disabled(!model.canTrashSession(test.id))
@@ -299,11 +301,13 @@ private struct CameraHeaderView: View {
         Menu {
             Button("Save photo report…", systemImage: "doc.richtext") { model.exportCameraReport(camera.id, sessionID: selectedTest?.id) }
             Button("Export camera archive…", systemImage: "archivebox") { model.exportCameraArchive(camera.id) }
-            Divider()
-            Button("Export ArmariumLucis results…", systemImage: "arrow.up.doc") {
-                if let selectedTest { model.exportTesterResults(selectedTest.id) }
-            }.disabled(selectedTest == nil || selectedTest?.demo == true || selectedTest?.cameraSnapshot?.catalogueCameraID == nil)
-            Text("ArmariumLucis export requires a test linked to an imported catalogue profile.")
+            if LucisIntegration.isEnabled {
+                Divider()
+                Button("Export ArmariumLucis results…", systemImage: "arrow.up.doc") {
+                    if let selectedTest { model.exportTesterResults(selectedTest.id) }
+                }.disabled(selectedTest == nil || selectedTest?.demo == true || selectedTest?.cameraSnapshot?.catalogueCameraID == nil)
+                Text("ArmariumLucis export requires a test linked to an imported catalogue profile.")
+            }
         } label: { Label("Export", systemImage: "square.and.arrow.up") }
         .fixedSize()
     }
