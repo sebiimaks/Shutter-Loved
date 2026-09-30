@@ -129,7 +129,13 @@ final class CameraMediaTests: XCTestCase {
             let text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n")
             XCTAssertTrue(text.contains("Original recorded camera name: Original name written at the bench"))
             XCTAssertTrue(text.contains("Assigned camera identity: Catalogue camera selected later"))
-            XCTAssertTrue(text.contains("Assigned after capture: \(assignedAt.formatted(date: .long, time: .shortened))"))
+            // PDFKit may extract locale-specific nonbreaking spaces as ordinary spaces.
+            func normalizedWhitespace(_ value: String) -> String {
+                value.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            }
+            let assignmentLabel = "Assigned after capture: \(assignedAt.formatted(date: .long, time: .shortened))"
+            XCTAssertTrue(normalizedWhitespace(text).contains(normalizedWhitespace(assignmentLabel)),
+                          "PDF is missing assignment timestamp: \(assignmentLabel). Extracted text: \(text)")
             XCTAssertFalse(text.contains("Camera at test time:"), "A later assignment cannot establish which camera identity was known during capture.")
         }
     }
