@@ -82,8 +82,28 @@ struct CameraIdentitySnapshot: Codable, Equatable {
 }
 
 struct CameraLibraryArchive: Codable {
-    var schemaVersion = 2
+    var schemaVersion = 3
     var libraryID = UUID()
     var cameras: [CameraProfile] = []
     var sessions: [CaptureSession] = []
+    var ownedTesters: [OwnedTester] = []
+
+    enum CodingKeys: String, CodingKey { case schemaVersion, libraryID, cameras, sessions, ownedTesters }
+
+    init(schemaVersion: Int = 3, libraryID: UUID = UUID(), cameras: [CameraProfile] = [], sessions: [CaptureSession] = [], ownedTesters: [OwnedTester] = []) {
+        self.schemaVersion = schemaVersion
+        self.libraryID = libraryID
+        self.cameras = cameras
+        self.sessions = sessions
+        self.ownedTesters = ownedTesters
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        libraryID = try container.decode(UUID.self, forKey: .libraryID)
+        cameras = try container.decode([CameraProfile].self, forKey: .cameras)
+        sessions = try container.decode([CaptureSession].self, forKey: .sessions)
+        ownedTesters = try container.decodeIfPresent([OwnedTester].self, forKey: .ownedTesters) ?? []
+    }
 }

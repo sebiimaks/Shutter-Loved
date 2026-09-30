@@ -25,7 +25,7 @@ final class CameraLibraryTests: XCTestCase {
         try store.save([session])
         let original = try Data(contentsOf: store.libraryURL)
         let library = try store.loadLibrary()
-        XCTAssertEqual(library.schemaVersion, 2)
+        XCTAssertEqual(library.schemaVersion, 3)
         XCTAssertTrue(library.cameras.isEmpty)
         XCTAssertNil(library.sessions[0].cameraID)
         XCTAssertEqual(library.sessions[0].id, session.id)
@@ -137,7 +137,7 @@ final class CameraLibraryTests: XCTestCase {
         var session = try sampleSession()
         session.records[0].nominalDenominator = 250
         XCTAssertThrowsError(try SessionStore.validate([session]))
-        session.records[0].derivedSnapshot = MeasurementResult.calculate(packet: session.records[0].packet, direction: .horizontal, nominalDenominator: 250)
+        session.records[0].derivedSnapshot = MeasurementResult.calculate(packet: try XCTUnwrap(session.records[0].packet), direction: .horizontal, nominalDenominator: 250)
         XCTAssertNoThrow(try SessionStore.validate([session]))
     }
 

@@ -5,24 +5,39 @@ struct MeasurementWorkspaceView: View {
     @EnvironmentObject private var model: AppModel
     @State private var editingTest: CaptureSession?
     @State private var pendingAssignment: UUID?
+    @State private var showCoverage = false
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    workspaceHeader
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 10) {
                     cameraMembership
+                    if let session = model.currentSession { TesterSelectionView(session: session) }
                     SessionSetupView()
-                    capturePrompt
-                    summaryMetrics
+                    if let session = model.currentSession { TesterPositioningView(session: session) }
+                }
+                .padding(12)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
+                capturePrompt
+                summaryMetrics
+                HStack(spacing: 8) {
                     RepeatabilitySummaryView()
                     if let session = model.currentSession, session.cameraID != nil {
-                        CameraCoverageView(session: session, plannedSpeeds: session.plannedSpeeds ?? [])
+                        Button("Speed coverage…") { showCoverage = true }
+                            .font(.caption)
+                            .popover(isPresented: $showCoverage) {
+                                ScrollView {
+                                    CameraCoverageView(session: session, plannedSpeeds: session.plannedSpeeds ?? [])
+                                        .padding(12)
+                                }
+                                .frame(width: 540, height: 360)
+                            }
                     }
                 }
-                .padding(22)
             }
-            .frame(maxHeight: 450)
+            .padding(14)
+            .fixedSize(horizontal: false, vertical: true)
             Divider()
             MeasurementTableView()
             Divider()
@@ -45,15 +60,21 @@ struct MeasurementWorkspaceView: View {
 
     @ViewBuilder private var cameraMembership: some View {
         if let session = model.currentSession {
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: session.demo ? "play.rectangle" : "camera")
+                    .foregroundStyle(session.demo ? Color.orange : Color.secondary)
+                TextField("Camera name or serial number", text: $model.cameraName)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Camera name")
+                    .help("Identify the camera being measured. The name is saved with this session.")
+                    .frame(minWidth: 120, maxWidth: .infinity)
                 if session.demo {
-                    Label("Demo test", systemImage: "play.rectangle")
-                        .foregroundStyle(.orange)
+                    Text("Demo").font(.caption.weight(.medium)).foregroundStyle(.orange)
                 } else if let cameraID = session.cameraID, let camera = model.cameras.first(where: { $0.id == cameraID }) {
-                    Button { model.selectCamera(cameraID) } label: { Label(camera.name, systemImage: "camera") }
-                    Text(session.displayTitle).font(.caption).foregroundStyle(.secondary)
+                    Button("Camera record") { model.selectCamera(cameraID) }
+                        .help("Open the camera record for \(camera.name).")
                 } else {
-                    Menu("Assign this test to a camera") {
+                    Menu("Assign camera…") {
                         ForEach(model.cameras) { camera in
                             Button(camera.name) { pendingAssignment = camera.id }
                         }
@@ -61,54 +82,40 @@ struct MeasurementWorkspaceView: View {
                         Button("Add a camera first…", action: model.newCamera)
                         Button("Import Armarium camera catalogue…", action: model.importCameraCatalogue)
                     }
+                    .fixedSize()
                     .help("Choose the physical camera tested. Names are never matched automatically.")
                 }
-                Spacer()
-                Button("Test details") { editingTest = session }
-                Button("Delete test…", role: .destructive) { model.pendingDeleteSessionID = session.id }
-                    .disabled(!model.canTrashSession(session.id))
-                    .help(model.canTrashSession(session.id)
-                          ? "Move this test and its readings to Trash. You can restore it later."
-                          : "Disconnect the tester before deleting the test that is receiving readings.")
-                if !session.demo && model.activeCaptureSessionID != nil && model.activeCaptureSessionID != session.id {
-                    Button("Record into this test", action: model.recordIntoSelectedTest)
-                        .help("Explicitly change the destination for future readings to this test.")
+                Button { editingTest = session } label: {
+                    Text(session.cameraID == nil ? "Test details" : "Test: \(session.displayTitle)")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: session.cameraID == nil ? 80 : 150)
                 }
+                .accessibilityLabel("Test details: \(session.displayTitle)")
+                .help("\(session.displayTitle) — edit the test title, planned speeds, operator and conditions.")
+                Button(role: .destructive) { model.pendingDeleteSessionID = session.id } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityLabel("Delete test…")
+                .disabled(!model.canTrashSession(session.id))
+                .help(model.canTrashSession(session.id)
+                      ? "Move this test and its readings to Trash. You can restore it later."
+                      : "Disconnect the tester before deleting the test that is receiving readings.")
             }
-        }
-    }
-
-    private var workspaceHeader: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Measure with confidence")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                Text("Set the camera, take a reading, understand the result.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if model.isDemoMode {
-                Label("SIMULATED DATA", systemImage: "play.rectangle.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(.orange.opacity(0.1), in: Capsule())
-            }
+            .controlSize(.small)
         }
     }
 
     private var capturePrompt: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(spacing: 8) {
             Image(systemName: model.isDemoMode ? "play.circle" : "camera.aperture")
-                .font(.title2)
                 .foregroundStyle(model.isDemoMode ? Color.orange : Color.accentColor)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.isDemoMode ? "Explore without a connected tester" : "Set your camera to \(MeasurementFormat.speed(model.nominalDenominator))")
-                    .font(.callout.weight(.semibold))
-                Text(model.isDemoMode ? "Demo readings are simulated and saved separately." : "For Shutter Lover: physically reset the tester, then release the camera shutter.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
+            Text(model.isDemoMode ? "Simulated readings · no tester required" : model.currentSession?.tester?.model.supportsManualEntry == true ? "Copy the result displayed on your Baby tester." : "Set \(MeasurementFormat.speed(model.nominalDenominator)), reset the tester, then release the shutter.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
             if model.isDemoMode {
                 Menu {
                     Button("Add partial demo reading") { model.addDemoReading(partial: true) }
@@ -116,16 +123,24 @@ struct MeasurementWorkspaceView: View {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 24)
+                .frame(width: 20)
                 .help("Add a demo reading with a missing sensor event.")
                 Button("Add demo reading") { model.addDemoReading() }
                     .buttonStyle(.borderedProminent)
+            } else if let session = model.currentSession, session.tester?.model.supportsManualEntry == true {
+                Button("Add manual reading…") { model.manualEntrySessionID = session.id }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.activeCaptureSessionID == session.id)
+            } else if let session = model.currentSession, model.canRecordUSB(in: session),
+                      model.activeCaptureSessionID != nil, model.activeCaptureSessionID != session.id {
+                Button("Record into this test", action: model.recordIntoSelectedTest)
+                    .help("Explicitly change the destination for future readings to this test.")
             } else {
                 Button("Setup guide") { model.showGuide = true }
             }
         }
-        .padding(12)
-        .background(model.isDemoMode ? Color.orange.opacity(0.055) : Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+        .controlSize(.small)
+        .padding(.horizontal, 2)
     }
 
     private var summaryMetrics: some View {
@@ -133,7 +148,7 @@ struct MeasurementWorkspaceView: View {
         let result = record?.result
         return HStack(spacing: 12) {
             SummaryMetricCard(
-                title: "Center exposure",
+                title: record?.measurementLabel ?? model.currentSession?.tester?.model.measurementLabel ?? "Center exposure",
                 value: MeasurementFormat.milliseconds(result?.center.durationMS),
                 detail: result?.center.reciprocalSeconds.map { "≈ \(MeasurementFormat.speed($0))" } ?? "Waiting for a reading",
                 symbol: "timer"
@@ -147,7 +162,7 @@ struct MeasurementWorkspaceView: View {
             SummaryMetricCard(
                 title: "Opening travel",
                 value: MeasurementFormat.milliseconds(result?.openingTravelMS),
-                detail: "Measured between corner sensors",
+                detail: (record?.isManual ?? (model.currentSession?.tester?.model.supportsManualEntry == true)) ? "Not measured by this single-sensor tester" : "Measured between corner sensors",
                 symbol: "arrow.right.to.line"
             )
         }
@@ -156,7 +171,7 @@ struct MeasurementWorkspaceView: View {
     private var statusBar: some View {
         HStack(spacing: 8) {
             Image(systemName: model.isDemoMode ? "play.rectangle" : model.isConnected ? "cable.connector" : "cable.connector.slash")
-            Text(model.isDemoMode ? "Demo session" : model.connectionStatus)
+            Text(model.isDemoMode ? "Demo session" : model.currentSession?.tester?.model.supportsManualEntry == true ? "Manual entry · no connection required" : model.connectionStatus)
                 .lineLimit(1)
             Spacer()
             Text(model.saveStatus)
@@ -173,56 +188,50 @@ private struct SessionSetupView: View {
     @State private var showNotes = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("CAMERA").setupLabel()
-                    TextField("Camera name or serial number", text: $model.cameraName)
+        HStack(alignment: .bottom, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("CAMERA SETTING").setupLabel()
+                NominalSpeedPicker(value: $model.nominalDenominator)
+            }
+            .frame(width: 140)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("CURTAIN DIRECTION").setupLabel()
+                Picker("Curtain direction", selection: $model.direction) {
+                    Text("Unknown").tag(CurtainDirection.unknown)
+                    Text("Horizontal").tag(CurtainDirection.horizontal)
+                    Text("Vertical").tag(CurtainDirection.vertical)
+                }
+                .labelsHidden()
+                .disabled(model.currentSession?.tester?.model.supportsManualEntry == true)
+                .help("Choose the direction the shutter curtains cross the frame. This affects full-frame travel estimates only.")
+            }
+            .frame(width: 124)
+            Toggle("Suggest next speed", isOn: $model.autoAdvance)
+                .disabled(model.currentSession?.tester?.model.supportsManualEntry == true)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .fixedSize()
+                .help("After a complete reading, advance the suggested setting from 1/15 through 1/1000 s. Settings apply to future readings; change the camera speed yourself.")
+                .padding(.bottom, 3)
+            Spacer(minLength: 0)
+            Button { showNotes.toggle() } label: {
+                Label("Notes", systemImage: model.sessionNotes.isEmpty ? "note.text" : "note.text.badge.plus")
+            }
+            .sheet(isPresented: $showNotes) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Test notes").font(.headline)
+                    Text("Camera condition, lighting or observations. Changes are saved with this test.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextField("Camera condition, lighting or observations…", text: $model.sessionNotes, axis: .vertical)
+                        .lineLimit(5...8)
                         .textFieldStyle(.roundedBorder)
-                        .help("Identify the camera being measured. The name is saved with this session.")
+                        .accessibilityLabel("Session notes")
+                    HStack { Spacer(); Button("Done") { showNotes = false }.keyboardShortcut(.defaultAction) }
                 }
-                .frame(maxWidth: .infinity)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("CAMERA SETTING").setupLabel()
-                    NominalSpeedPicker(value: $model.nominalDenominator)
-                }
-                .frame(width: 165)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("CURTAIN DIRECTION").setupLabel()
-                    Picker("Curtain direction", selection: $model.direction) {
-                        Text("Unknown").tag(CurtainDirection.unknown)
-                        Text("Horizontal").tag(CurtainDirection.horizontal)
-                        Text("Vertical").tag(CurtainDirection.vertical)
-                    }
-                    .labelsHidden()
-                    .help("Choose the direction the shutter curtains cross the frame. This affects full-frame travel estimates only.")
-                }
-                .frame(width: 140)
-            }
-            HStack(alignment: .center, spacing: 16) {
-                Toggle("Suggest next speed", isOn: $model.autoAdvance)
-                    .toggleStyle(.checkbox)
-                    .help("After a complete reading, advance the suggested setting from 1/15 through 1/1000 s. Change the camera speed yourself.")
-                Text("Settings apply to future readings. Change the camera manually.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Button {
-                    showNotes.toggle()
-                } label: {
-                    Label("Notes", systemImage: showNotes ? "chevron.up" : "note.text")
-                }
-                .buttonStyle(.borderless)
-            }
-            if showNotes {
-                TextField("Session notes: camera condition, lighting, service history…", text: $model.sessionNotes, axis: .vertical)
-                    .lineLimit(2...4)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Session notes")
+                .padding(20).frame(width: 420)
             }
         }
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
+        .controlSize(.small)
     }
 }
 
@@ -233,18 +242,20 @@ private struct SummaryMetricCard: View {
     let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             Label(title, systemImage: symbol)
                 .font(.caption.weight(.medium)).foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 25, weight: .semibold, design: .rounded))
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .minimumScaleFactor(0.7).lineLimit(1)
                 .textSelection(.enabled)
-            Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            Text(detail).font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(2, reservesSpace: true)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(10)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
         .accessibilityElement(children: .combine)
@@ -257,8 +268,9 @@ private struct RepeatabilitySummaryView: View {
     var body: some View {
         let target = model.selectedRecord?.nominalDenominator ?? model.nominalDenominator
         let direction = model.selectedRecord?.direction ?? model.direction
+        let context = (model.selectedRecord ?? model.currentRecords.last)?.resultContextID
         let durations = model.currentRecords.filter {
-            !$0.isExcluded && $0.nominalDenominator == target && $0.direction == direction && $0.result.quality != .invalid
+            !$0.isExcluded && $0.nominalDenominator == target && $0.direction == direction && $0.result.quality != .invalid && $0.resultContextID == context
         }.compactMap { $0.result.center.durationMS }.filter { $0 > 0 }
         let mean = durations.isEmpty ? nil : durations.reduce(0, +) / Double(durations.count)
         let deviation: Double? = {
@@ -278,7 +290,7 @@ private struct RepeatabilitySummaryView: View {
             Spacer(minLength: 0)
         }
         .font(.caption).foregroundStyle(.secondary)
-        .help("Mean and sample standard deviation use valid center durations at the same camera setting and curtain direction. Excluded readings are omitted; at least two readings are needed for standard deviation.")
+        .help("Mean and sample standard deviation use valid exposures at the same camera setting, direction, tester identity, measurement method and mode. Excluded readings are omitted; at least two readings are needed for standard deviation.")
     }
 }
 
@@ -306,15 +318,16 @@ private struct MeasurementTableView: View {
                     .toggleStyle(.checkbox).font(.caption)
                     .help("Select each new reading as it arrives. Turn this off to keep inspecting an earlier reading.")
             }
-            .padding(.horizontal, 22).padding(.vertical, 13)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             if model.currentRecords.isEmpty {
-                ContentUnavailableView {
+                VStack(spacing: 8) {
                     Label("Ready for your first reading", systemImage: "waveform.path")
-                } description: {
-                    Text(model.isDemoMode ? "Use Add demo reading to explore measurements and explanations." : "Connect your Shutter Lover, check the setup guide, and release the camera shutter.")
-                } actions: {
-                    Button("Read the setup guide") { model.showGuide = true }
+                        .font(.headline)
+                    Text(model.isDemoMode ? "Choose Add demo reading to explore measurements." : model.currentSession?.tester?.model.supportsManualEntry == true ? "Choose Add manual reading to copy the tester’s result." : "Connect your Shutter Lover and release the camera shutter.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
+                .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(model.currentRecords, selection: $model.selectedRecordID) {
@@ -322,13 +335,13 @@ private struct MeasurementTableView: View {
                         Text("\((model.currentRecords.firstIndex { $0.id == record.id } ?? 0) + 1)")
                             .foregroundStyle(.secondary)
                     }.width(30)
-                    TableColumn("Received") { record in
+                    TableColumn("Time") { record in
                         Text(record.capturedAt, format: .dateTime.hour().minute().second())
                     }.width(min: 74, ideal: 80)
                     TableColumn("Camera setting") { record in
                         Text(MeasurementFormat.speed(record.nominalDenominator))
                     }.width(min: 85, ideal: 100)
-                    TableColumn("Center") { record in
+                    TableColumn("Exposure") { record in
                         Text(MeasurementFormat.milliseconds(record.result.center.durationMS))
                     }.width(min: 82, ideal: 100)
                     TableColumn("Difference") { record in
@@ -359,7 +372,7 @@ private struct MeasurementTableView: View {
                 }
             }
         }
-        .frame(minHeight: 220, maxHeight: .infinity)
+        .frame(minHeight: 150, maxHeight: .infinity)
     }
 }
 

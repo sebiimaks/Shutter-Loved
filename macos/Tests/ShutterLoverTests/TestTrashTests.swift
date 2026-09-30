@@ -228,7 +228,7 @@ final class TestTrashTests: XCTestCase {
             edit.notes = "Stale editor callback"
             model.updateTestDetails(edit)
             model.assignSession(session.id, to: camera.id)
-            model.append(packet: session.records[0].packet, raw: session.records[0].rawLine, simulated: false)
+            model.append(packet: try XCTUnwrap(session.records[0].packet), raw: session.records[0].rawLine, simulated: false)
             model.activeCaptureSessionID = nil
             model.isConnected = true
             model.recordIntoSelectedTest()

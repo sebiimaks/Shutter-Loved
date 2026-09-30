@@ -14,8 +14,13 @@ struct ReadingInspectorView: View {
                         header(record)
                         Divider()
                         quality(record)
-                        SensorDetailsView(record: record, showExplanations: showExplanations)
-                        CurtainDetailsView(record: record, showExplanations: showExplanations)
+                        if record.isManual {
+                            manualMeasurement(record)
+                        } else {
+                            SensorDetailsView(record: record, showExplanations: showExplanations)
+                            CurtainDetailsView(record: record, showExplanations: showExplanations)
+                        }
+                        testerDetails(record)
                         context(record)
                         rawData(record)
                         actions(record)
@@ -63,7 +68,9 @@ struct ReadingInspectorView: View {
                 .foregroundStyle(MeasurementFormat.qualityColor(record.result.quality))
             if record.result.issues.isEmpty {
                 if showExplanations {
-                    Text("All required sensor events are available. Complete describes the data, not the camera's condition.")
+                    Text(record.isManual
+                         ? "The manually entered duration is valid. Complete does not verify transcription accuracy or the camera's condition."
+                         : "All required sensor events are available. Complete describes the data, not the camera's condition.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } else {
@@ -84,15 +91,17 @@ struct ReadingInspectorView: View {
             Text("Recorded setup").font(.headline)
             ExplainedValueRow(title: "Camera setting", value: MeasurementFormat.speed(record.nominalDenominator),
                               explanation: "The reference setting recorded for this reading. Later camera setup changes do not alter it; explicit corrections are listed below.", showExplanation: showExplanations)
-            ExplainedValueRow(title: "Curtain direction", value: record.direction.title,
-                              explanation: "The direction saved with this reading determines its full-frame estimates.", showExplanation: showExplanations)
+            if !record.isManual {
+                ExplainedValueRow(title: "Curtain direction", value: record.direction.title,
+                                  explanation: "The direction saved with this reading determines its full-frame estimates.", showExplanation: showExplanations)
+            }
             ExplainedValueRow(title: "Timing difference", value: MeasurementFormat.stops(record.result.exposureErrorStops),
                               explanation: "Positive means longer than the target; negative means shorter. This compares timing, not total photographic exposure.", showExplanation: showExplanations)
             ExplainedValueRow(title: "Difference (%)", value: MeasurementFormat.percent(record.result.exposureErrorPercent),
-                              explanation: "The percentage by which center exposure differs from the recorded camera setting.", showExplanation: showExplanations)
+                              explanation: "The percentage by which the recorded exposure duration differs from the camera setting.", showExplanation: showExplanations)
             Button("Correct recorded setting…") { showCorrectSetting = true }
                 .font(.caption)
-                .help("Fix the reference setting for this reading while preserving the measured sensor data.")
+                .help("Fix the reference setting while preserving the original measurement.")
             if !record.settingCorrections.isEmpty {
                 DisclosureGroup("Setting correction history") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -112,8 +121,9 @@ struct ReadingInspectorView: View {
         }
     }
 
-    private func rawData(_ record: MeasurementRecord) -> some View {
-        DisclosureGroup("Original measurement data") {
+    @ViewBuilder private func rawData(_ record: MeasurementRecord) -> some View {
+        if record.packet != nil {
+            DisclosureGroup("Original measurement data") {
             VStack(alignment: .leading, spacing: 8) {
                 Text("The original line received from the tester is preserved with this reading.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -125,6 +135,51 @@ struct ReadingInspectorView: View {
             .padding(.top, 8)
         }
         .font(.caption.weight(.medium))
+        }
+    }
+
+    @ViewBuilder private func manualMeasurement(_ record: MeasurementRecord) -> some View {
+        if let manual = record.manual {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Manual reading", systemImage: "square.and.pencil").font(.headline)
+                ExplainedValueRow(title: record.measurementLabel, value: MeasurementFormat.milliseconds(record.result.center.durationMS),
+                                  explanation: "Copied from the tester display and converted to milliseconds. The original value and unit are retained below.", showExplanation: showExplanations)
+                ExplainedValueRow(title: "Original display value", value: "\(manual.enteredValue.formatted()) \(manual.unit.symbol)",
+                                  explanation: "Exactly the number and unit entered by the operator; no USB timing packet was received.", showExplanation: showExplanations)
+                if record.tester?.model == .babyShutterTesterMkII {
+                    ExplainedValueRow(title: "Measurement mode", value: manual.mode.displayName,
+                                      explanation: "Automatic and Global mode use different illumination references. Their readings are summarised separately.", showExplanation: showExplanations)
+                    if let value = manual.illumination { CameraFieldRow(title: "Illumination E0", value: value.formatted()) }
+                    if let value = manual.seriesIllumination { CameraFieldRow(title: "Series maximum illumination E₀", value: value.formatted()) }
+                }
+                if !manual.notes.isEmpty { CameraFieldRow(title: "Entry notes", value: manual.notes) }
+                Text("Corner exposures and curtain travel were not measured by this entry. Sensor position is not recorded.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func testerDetails(_ record: MeasurementRecord) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Tester used").font(.headline)
+            CameraFieldRow(title: "Model / owned unit", value: record.testerDescription)
+            if let tester = record.tester {
+                CameraFieldRow(title: "Manufacturer", value: tester.model.manufacturer)
+                if !tester.serialNumber.isEmpty { CameraFieldRow(title: "Tester serial", value: tester.serialNumber) }
+                if let id = tester.id { CameraFieldRow(title: "Owned tester UUID", value: id.uuidString) }
+                if let usb = tester.usbIdentity { CameraFieldRow(title: "Recorded USB identity", value: usb.stableIdentityKey) }
+                if let date = tester.calibrationDate { CameraFieldRow(title: "Calibration date", value: date.formatted(date: .abbreviated, time: .omitted)) }
+                if tester.model == .shutterLover {
+                    ExplainedValueRow(title: "Calibrated optimal distance", value: tester.calibratedOptimalDistanceDescription ?? "Not recorded",
+                                      explanation: "The recommended LED-to-sensor distance saved with this reading. It does not record the actual distance used for this exposure or change the timing calculation.", showExplanation: showExplanations)
+                }
+                if !tester.calibrationNotes.isEmpty { CameraFieldRow(title: "Calibration notes", value: tester.calibrationNotes) }
+            } else {
+                Text("This older reading did not record a physical tester identity.").font(.caption).foregroundStyle(.secondary)
+            }
+            CameraFieldRow(title: "Source", value: record.isDemo ? "Simulation" : (record.isManual ? "Manual transcription" : "USB measurement"))
+            if !record.firmwareVersion.isEmpty { CameraFieldRow(title: "Firmware", value: record.firmwareVersion) }
+        }
     }
 
     private func actions(_ record: MeasurementRecord) -> some View {

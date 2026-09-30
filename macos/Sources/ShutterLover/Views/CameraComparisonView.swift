@@ -19,7 +19,7 @@ struct CameraComparisonView: View {
         guard let before, let after, before.id != after.id else { return [] }
         let right = CameraResultGroup.groups(for: after)
         return CameraResultGroup.groups(for: before).compactMap { left in
-            guard let matching = right.first(where: { $0.denominator == left.denominator && $0.direction == left.direction }) else { return nil }
+            guard let matching = right.first(where: { $0.id == left.id }) else { return nil }
             return ComparisonPair(before: left, after: matching)
         }
     }
@@ -29,7 +29,7 @@ struct CameraComparisonView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Compare camera tests").font(.title2.weight(.semibold))
-                    Text("Select two tests from this camera. Only matching settings and curtain directions are compared.")
+                    Text("Select two tests. Comparison requires matching settings, directions, tester identity, measurement source and mode.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -48,11 +48,11 @@ struct CameraComparisonView: View {
                     } else if let before, let after {
                         comparisonNotes(before, after)
                         if matched.isEmpty {
-                            ContentUnavailableView("No matching readings", systemImage: "square.dashed", description: Text("Both tests need complete, included readings at the same camera setting and curtain direction."))
+                            ContentUnavailableView("No matching readings", systemImage: "square.dashed", description: Text("Both tests need complete, included readings with the same setting, direction, tester identity, source and mode."))
                         } else {
                             comparisonGrid
                         }
-                        Text("Comparison uses center exposure means. A positive change means the later exposure was longer. Sample counts and standard deviations describe the evidence; a measured difference does not by itself establish a service outcome.")
+                        Text("Comparison uses USB center exposure or manual displayed exposure means, in separate groups. A positive change means the later exposure was longer. Effective exposure and USB timing are not interchangeable. A measured difference alone does not establish a service outcome.")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
                         ContentUnavailableView("Choose two tests", systemImage: "arrow.left.arrow.right", description: Text("The original readings and both tests remain unchanged."))
@@ -79,8 +79,10 @@ struct CameraComparisonView: View {
         let afterGroups = CameraResultGroup.groups(for: after)
         let unmatched = beforeGroups.count + afterGroups.count - matched.count * 2
         return VStack(alignment: .leading, spacing: 10) {
-            Text("\(matched.count) matching setting/direction groups · \(unmatched) unmatched groups omitted")
+            Text("\(matched.count) matching measurement groups · \(unmatched) unmatched groups omitted")
                 .font(.callout.weight(.medium))
+            Text("Reference tester: \(before.testerSummary)\nComparison tester: \(after.testerSummary)")
+                .font(.caption).foregroundStyle(.secondary)
             if after.createdAt < before.createdAt {
                 Label("The comparison test is dated earlier than the reference. The column order follows your selection.", systemImage: "calendar.badge.exclamationmark").font(.caption).foregroundStyle(.orange)
             }
@@ -93,14 +95,22 @@ struct CameraComparisonView: View {
             if Set(before.records.map(\.calculationVersion)) != Set(after.records.map(\.calculationVersion)) {
                 Label("Calculation versions differ between tests.", systemImage: "info.circle").font(.caption).foregroundStyle(.orange)
             }
-            let beforeFirmware = Set(before.records.map { $0.packet.firmware_version })
-            let afterFirmware = Set(after.records.map { $0.packet.firmware_version })
+            let beforeFirmware = Set(before.records.map(\.firmwareVersion))
+            let afterFirmware = Set(after.records.map(\.firmwareVersion))
             if beforeFirmware != afterFirmware {
                 Label("Observed tester firmware differs between tests.", systemImage: "cpu").font(.caption).foregroundStyle(.orange)
             }
+            if before.records.contains(where: \.isManual) || after.records.contains(where: \.isManual) {
+                Text("Manual values depend on transcription and the tester's illumination reference. Check each reading's E₀, Global-mode series maximum and setup before interpreting a change.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if before.records.contains(where: { $0.tester?.id == nil }) || after.records.contains(where: { $0.tester?.id == nil }) {
+                Text("Some readings have no owned tester UUID. Matching unknown identity labels cannot prove the same physical tester was used.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
             Text("Recorded tolerance: reference ±\(String(format: "%.2f", before.toleranceStops ?? 1.0 / 3.0)) stops · comparison ±\(String(format: "%.2f", after.toleranceStops ?? 1.0 / 3.0)) stops")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("The current measurement engine uses a 32 × 20 mm sensor rectangle and 36 × 24 mm frame. This comparison does not establish compatibility with other geometries.")
+            Text("USB travel calculations use a 32 × 20 mm sensor rectangle and 36 × 24 mm frame. Manual readings contain no travel measurements.")
                 .font(.caption).foregroundStyle(.secondary)
         }.cameraCard()
     }
@@ -108,7 +118,7 @@ struct CameraComparisonView: View {
     private var comparisonGrid: some View {
         Grid(alignment: .leading, horizontalSpacing: 22, verticalSpacing: 14) {
             GridRow {
-                Text("Setting / direction")
+                Text("Setting / method")
                 Text("Reference mean")
                 Text("Comparison mean")
                 Text("Change")
@@ -119,6 +129,7 @@ struct CameraComparisonView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(MeasurementFormat.speed(pair.before.denominator)).fontWeight(.medium)
                         Text(pair.before.direction.title).font(.caption).foregroundStyle(.secondary)
+                        Text(pair.before.contextDescription).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 260, alignment: .leading)
                     }
                     summary(pair.before)
                     summary(pair.after)

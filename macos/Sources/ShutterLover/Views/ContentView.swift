@@ -42,6 +42,10 @@ struct ContentView: View {
         .sheet(item: $model.editingCamera) { camera in
             CameraEditorView(camera: camera) { model.saveCamera($0) }
         }
+        .sheet(isPresented: $model.showTesters) { TesterInventoryView() }
+        .sheet(isPresented: Binding(get: { model.manualEntrySessionID != nil }, set: { if !$0 { model.manualEntrySessionID = nil } })) {
+            if let id = model.manualEntrySessionID { ManualReadingView(sessionID: id) }
+        }
         .sheet(isPresented: $model.showCatalogueReview) {
             if let review = model.catalogueReview { CameraCatalogueReviewView(review: review).environmentObject(model) }
         }
@@ -170,6 +174,13 @@ struct ContentView: View {
                     }
                 }
             }
+            Section("Equipment") {
+                Button { model.showTesters = true } label: {
+                    Label("My testers", systemImage: "sensor.tag.radiowaves.forward")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 6).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
             Section("Learn") {
                 Button {
                     model.showGuide = true
@@ -247,6 +258,7 @@ struct ContentView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
                 Button("Add camera…", action: model.newCamera)
+                Button("New Baby tester test") { model.newManualSession(cameraID: model.showCameraLibrary ? model.selectedCameraID : nil) }
                 if let camera = model.selectedCamera {
                     Button("New test for \(camera.name)") { model.newCameraTest(camera.id) }
                 }
@@ -357,19 +369,56 @@ private struct ConnectionPopover: View {
                 Text(model.selectedPortPath).font(.caption.monospaced()).foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
+            if let device = model.selectedSerialDevice {
+                Picker("Owned tester", selection: $model.selectedConnectionTesterID) {
+                    Text("Match saved USB identity automatically").tag(UUID?.none)
+                    ForEach(model.ownedTesters) { tester in
+                        Text("\(tester.displayName) · \(tester.model.displayName)").tag(Optional(tester.id))
+                    }
+                }.disabled(model.isConnected || model.isConnecting || model.activeCaptureSessionID != nil)
+                if let matched = model.matchedOwnedTester(for: device), model.selectedConnectionTesterID == nil {
+                    Label("Matched: \(matched.displayName)", systemImage: "checkmark.circle").font(.caption)
+                } else if model.selectedConnectionTesterID == nil {
+                    Text("Individual tester not assigned. Received packets can identify the model, but not the physical unit.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let identity = device.testerUSBIdentity {
+                    Text(String(format: "USB %04X:%04X · %@", identity.vendorID, identity.productID, identity.serialNumber))
+                        .font(.caption.monospaced()).textSelection(.enabled)
+                } else {
+                    Text("No unique USB serial is available. Select your tester for this connection; the port will not be saved as a permanent identity.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let problem = model.connectionIdentityProblem { Text(problem).font(.caption).foregroundStyle(.orange) }
+                if !model.connectionTester(for: device).model.supportsUSBRecording {
+                    Text("Baby testers use manual entry in this version. Their USB identity can still be associated in My testers.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Manage my testers…") { model.showTesters = true }
+            }
             Label(model.connectionStatus, systemImage: model.isConnected ? "circle.fill" : "circle")
                 .font(.callout)
                 .foregroundStyle(model.isConnected ? Color.green : .secondary)
+            if case .ready(let placement) = model.connectionPositioningGuidance {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("\(AppModel.positioningNumber(placement.ledToMountDistanceMM)) mm · LEDs to mount", systemImage: "ruler")
+                        .font(.headline)
+                    Text("\(placement.cameraName) · \(placement.mountName)\n\(AppModel.positioningNumber(placement.calibrationDistanceMM)) − \(AppModel.positioningNumber(placement.flangeDistanceMM)) mm\(placement.usesCustomDistance ? " · custom flange value" : "")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Lens removed; sensor at the film plane. Measure to the lens-seating flange, without a mount adapter.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Text("The connection listens for measurements. Reset the tester and release the camera shutter using their physical controls.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                if model.isConnected || model.isConnecting {
+                if model.isConnected || model.isConnecting || model.activeCaptureSessionID != nil {
                     Button("Disconnect") { model.disconnect() }
                 } else {
                     Button("Connect") { model.connect() }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.selectedPortPath.isEmpty)
+                        .disabled(model.selectedPortPath.isEmpty || model.connectionIdentityProblem != nil || model.selectedSerialDevice.map { !model.connectionTester(for: $0).model.supportsUSBRecording } == true)
                 }
                 Spacer()
                 Button("Explore demo") {
@@ -390,7 +439,7 @@ private struct ConnectionPopover: View {
             .font(.caption)
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(width: 410)
         .onAppear { model.refreshDevices() }
     }
 }

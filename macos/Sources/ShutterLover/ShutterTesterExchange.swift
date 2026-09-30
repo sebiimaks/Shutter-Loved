@@ -96,6 +96,7 @@ enum ShutterTesterExchange {
         var measurements: [[String: Any]] = []
         var sampleNotes: [String] = []
         var exported = 0
+        var manualCount = 0
         var omittedTravel = 0
         for (index, record) in session.records.enumerated() {
             let result = record.result
@@ -103,33 +104,46 @@ enum ShutterTesterExchange {
             guard index < 10_000 else { throw ExchangeError.invalid("A reading's original sample index exceeds the format's 10,000 limit. Export a smaller test run.") }
             let sample = index + 1
             let nominal = 1 / record.nominalDenominator
-            func add(_ milliseconds: Double?, quantity: String, position: String, nominalValue: Double? = nil) throws {
+            func add(_ milliseconds: Double?, quantity: String, position: String? = nil, nominalValue: Double? = nil) throws {
                 guard let milliseconds, milliseconds.isFinite, milliseconds > 0 else {
                     if quantity == "curtainTravelDuration" { omittedTravel += 1; return }
                     throw ExchangeError.invalid("A complete reading has no positive finite exposure duration.")
                 }
                 let seconds = milliseconds / 1_000
                 guard seconds > 0, seconds <= 1e12 else { throw ExchangeError.invalid("A measured duration exceeds the exchange format's supported range.") }
-                var measurement: [String: Any] = ["quantity": quantity, "value": seconds, "unit": "s", "position": position, "sampleIndex": sample]
+                var measurement: [String: Any] = ["quantity": quantity, "value": seconds, "unit": "s", "sampleIndex": sample]
+                if let position { measurement["position"] = position }
                 if let nominalValue { measurement["nominalValue"] = nominalValue }
                 measurements.append(measurement)
             }
-            try add(result.center.durationMS, quantity: "exposureDuration", position: "centre", nominalValue: nominal)
-            try add(result.bottomLeft.durationMS, quantity: "exposureDuration", position: "bottom-left", nominalValue: nominal)
-            try add(result.topRight.durationMS, quantity: "exposureDuration", position: "top-right", nominalValue: nominal)
-            try add(result.openingTravelMS, quantity: "curtainTravelDuration", position: "opening curtain: bottom-left to top-right sensor interval")
-            try add(result.closingTravelMS, quantity: "curtainTravelDuration", position: "closing curtain: bottom-left to top-right sensor interval")
-            sampleNotes.append("Sample \(sample): reading \(record.id.uuidString.lowercased()); direction \(record.direction.rawValue); captured \(timestamp(record.capturedAt)).")
+            if record.isManual {
+                // v1 has no effective-exposure quantity. Use its exposure duration
+                // with explicit per-sample provenance, and omit unknown position.
+                try add(result.center.durationMS, quantity: "exposureDuration", nominalValue: nominal)
+                manualCount += 1
+            } else {
+                try add(result.center.durationMS, quantity: "exposureDuration", position: "centre", nominalValue: nominal)
+                try add(result.bottomLeft.durationMS, quantity: "exposureDuration", position: "bottom-left", nominalValue: nominal)
+                try add(result.topRight.durationMS, quantity: "exposureDuration", position: "top-right", nominalValue: nominal)
+                try add(result.openingTravelMS, quantity: "curtainTravelDuration", position: "opening curtain: bottom-left to top-right sensor interval")
+                try add(result.closingTravelMS, quantity: "curtainTravelDuration", position: "closing curtain: bottom-left to top-right sensor interval")
+            }
+            var provenance = "Sample \(sample): reading \(record.id.uuidString.lowercased()); direction \(record.direction.rawValue); captured \(timestamp(record.capturedAt))."
+            if record.tester != nil { provenance += " Tester: \(record.testerProvenanceDescription)." }
+            if let manual = record.manualProvenanceDescription { provenance += " " + manual }
+            sampleNotes.append(provenance)
             exported += 1
         }
-        guard !measurements.isEmpty else { throw ExchangeError.invalid("There are no included, complete device readings to export. Partial, invalid, excluded and simulated readings remain available in the full archive.") }
+        guard !measurements.isEmpty else { throw ExchangeError.invalid("There are no included, complete readings to export. Partial, invalid, excluded and simulated readings remain available in the full archive.") }
         guard measurements.count <= 512 else {
             throw ExchangeError.invalid("This test produces \(measurements.count) quantities; Shutter Tester JSON v1 permits 512 per run. No readings were truncated. Export the full archive, or create smaller test runs for Armarium.")
         }
         let omitted = session.records.count - exported
         // Keep generated evidence text stable across the app rename: changing
         // notes at the same test revision would conflict with previous imports.
-        let explanation = "Shutter Lover calculation version 1. Exposure and calibrated outer-sensor curtain intervals are measured seconds. Curtain intervals span the 32 × 20 mm sensor rectangle; they are not full-frame travel estimates. Exported \(exported) complete included device readings; omitted \(omitted) excluded, partial or invalid readings and \(omittedTravel) nonpositive/unavailable curtain quantities. Raw events, calibration, exclusions and complete provenance are retained in the Shutter Lover archive."
+        let explanation = manualCount == 0
+            ? "Shutter Lover calculation version 1. Exposure and calibrated outer-sensor curtain intervals are measured seconds. Curtain intervals span the 32 × 20 mm sensor rectangle; they are not full-frame travel estimates. Exported \(exported) complete included device readings; omitted \(omitted) excluded, partial or invalid readings and \(omittedTravel) nonpositive/unavailable curtain quantities. Raw events, calibration, exclusions and complete provenance are retained in the Shutter Lover archive."
+            : "Shutter Loved calculation version 1. Exported \(exported) complete included readings, including \(manualCount) manually transcribed display results; omitted \(omitted) excluded, partial or invalid readings and \(omittedTravel) nonpositive/unavailable device curtain quantities. Manual results export as exposureDuration in seconds; sample notes distinguish effective exposure (Baby Shutter Tester Mk II) from measured exposure and identify mode, original units and tester. Manual sensor positions, corner exposures and curtain travel are unavailable. USB curtain intervals span the 32 × 20 mm sensor rectangle, not full-frame travel. Original entries, device packets where present and complete provenance remain in the Shutter Loved archive."
         let association = session.cameraAssignedAt.map { "Camera association explicitly assigned on \(timestamp($0)) after capture; originally recorded camera name: \(session.cameraName)." } ?? ""
         let notes = ([session.notes, association, explanation] + sampleNotes).filter { !$0.isEmpty }.joined(separator: "\n\n")
         guard notes.utf8.count <= 16_384 else { throw ExchangeError.invalid("The notes and reading identity provenance exceed the format's 16 KiB limit. Shorten the test notes or use the full archive.") }
@@ -138,16 +152,27 @@ enum ShutterTesterExchange {
         var test: [String: Any] = ["id": session.id.uuidString.lowercased(), "cameraID": externalID.uuidString.lowercased(),
                                    "revision": session.effectiveRevision, "title": exportTitle,
                                    "performedAt": timestamp(session.createdAt), "testType": "shutterTiming", "measurements": measurements, "notes": notes]
-        let firmware = Set(session.records.filter { !$0.isExcluded && $0.result.quality == .complete }.map { $0.packet.firmware_version })
-        var tester: [String: Any] = ["model": "Shutter Lover"]
-        if firmware.count == 1 { tester["firmware"] = firmware.first! }
-        test["tester"] = tester
+        let included = session.records.filter { !$0.isExcluded && $0.result.quality == .complete }
+        let models = Set(included.map { ($0.tester?.model ?? .shutterLover).displayName })
+        let firmware = Set(included.map(\.firmwareVersion))
+        var tester: [String: Any] = [:]
+        if models.count == 1 { tester["model"] = models.first }
+        if included.contains(where: { $0.tester != nil }) {
+            tester["manufacturer"] = TesterModel.shutterLover.manufacturer
+            let serials = Set(included.map { $0.tester?.serialNumber ?? "" })
+            if serials.count == 1, let serial = serials.first, !serial.isEmpty { tester["serial"] = serial }
+        }
+        if firmware.count == 1, let value = firmware.first,
+           !value.isEmpty || included.allSatisfy({ $0.tester == nil && !$0.isManual }) {
+            tester["firmware"] = value
+        }
+        if !tester.isEmpty { test["tester"] = tester }
         var conditions: [String: Any] = [:]
         if let source = session.lightSource, !source.isEmpty { conditions["lightSource"] = source }
         if let notes = session.testConditions, !notes.isEmpty { conditions["notes"] = notes }
         if !conditions.isEmpty { test["conditions"] = conditions }
         let envelope: [String: Any] = ["format": format, "version": 1, "kind": "testResults", "createdAt": timestamp(createdAt),
-                                       "source": ["libraryID": producerLibraryID.uuidString.lowercased(), "application": "Shutter Loved", "version": "0.2.3"],
+                                       "source": ["libraryID": producerLibraryID.uuidString.lowercased(), "application": "Shutter Loved", "version": "0.3.3"],
                                        "requiredCapabilities": ["shutter-timing-v1"], "cameraCatalogueID": catalogueID.uuidString.lowercased(), "tests": [test]]
         let data = try JSONSerialization.data(withJSONObject: envelope, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try validateResults(data)

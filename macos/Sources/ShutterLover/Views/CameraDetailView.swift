@@ -142,8 +142,9 @@ struct CameraDetailView: View {
                 Text(test.displayTitle).font(.headline)
                 Text(test.createdAt, format: .dateTime.day().month(.abbreviated).year().hour().minute()).font(.caption).foregroundStyle(.secondary)
                 let summaries = CameraResultGroup.groups(for: test)
-                Text("\(test.records.count) readings · \(summaries.reduce(0) { $0 + $1.count }) included complete · \(summaries.count) setting/direction groups")
+                Text("\(test.records.count) readings · \(summaries.reduce(0) { $0 + $1.count }) included complete · \(summaries.count) measurement groups")
                     .font(.caption).foregroundStyle(.secondary)
+                Text(test.testerSummary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer()
             Button("Results") { selectedTestID = test.id; tab = .results }
@@ -322,7 +323,7 @@ private struct CameraTestResultsView: View {
             CameraCoverageView(session: session, plannedSpeeds: session.plannedSpeeds ?? camera.plannedSpeeds)
             VStack(alignment: .leading, spacing: 12) {
                 Text("Timing by camera setting").font(.headline)
-                Text("Means use complete, included readings from this test, grouped by setting and curtain direction. Positive timing difference means a longer exposure; negative means shorter. SD is sample standard deviation and needs two readings.")
+                Text("Means use complete, included readings, keeping settings, curtain directions, tester units, USB/manual sources and manual modes separate. Positive difference means longer exposure. SD describes repeatability and needs two readings.")
                     .font(.caption).foregroundStyle(.secondary)
                 if groups.isEmpty {
                     Text("No complete included readings yet. Partial and excluded readings remain available in the original record.").foregroundStyle(.secondary).padding(.vertical, 8)
@@ -330,7 +331,7 @@ private struct CameraTestResultsView: View {
                     ScrollView(.horizontal) {
                         Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
                             GridRow {
-                                Text("Setting / direction"); Text("Mean center"); Text("Difference"); Text("SD"); Text("n"); Text("Mean assessment"); Text("")
+                                Text("Setting / tester / method"); Text("Mean exposure"); Text("Difference"); Text("SD"); Text("n"); Text("Mean assessment"); Text("")
                             }.font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             Divider().gridCellUnsizedAxes(.horizontal)
                             ForEach(groups) { group in
@@ -358,7 +359,7 @@ private struct CameraTestResultsView: View {
         let excluded = session.records.filter(\.isExcluded).count
         let incomplete = session.records.filter { !$0.isExcluded && $0.result.quality != .complete }.count
         return HStack(alignment: .top, spacing: 18) {
-            CameraStatistic(title: "Timing assessment", value: groups.isEmpty ? "No assessment" : "\(within) / \(groups.count)", detail: "Setting/direction means within ±\(String(format: "%.2f", tolerance)) stops")
+            CameraStatistic(title: "Timing assessment", value: groups.isEmpty ? "No assessment" : "\(within) / \(groups.count)", detail: "Measurement group means within ±\(String(format: "%.2f", tolerance)) stops")
             CameraStatistic(title: "Included complete", value: "\(includedCount)", detail: "\(excluded) excluded · \(incomplete) partial or invalid")
             CameraStatistic(title: "Chosen tolerance", value: "±\(String(format: "%.2f", tolerance))", detail: "Stops · operator choice, not a camera health grade")
         }
@@ -374,6 +375,7 @@ private struct CameraTimingRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(MeasurementFormat.speed(group.denominator)).fontWeight(.medium)
                 Text(group.direction.title).font(.caption2).foregroundStyle(.secondary)
+                Text(group.contextDescription).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: 250, alignment: .leading)
             }
             Text(MeasurementFormat.milliseconds(group.meanMS))
             VStack(alignment: .leading, spacing: 3) {
@@ -399,7 +401,10 @@ private struct CameraReadingRow: View {
         HStack(spacing: 16) {
             Text(record.capturedAt, format: .dateTime.hour().minute().second()).foregroundStyle(.secondary)
             Text(MeasurementFormat.speed(record.nominalDenominator)).frame(width: 75, alignment: .leading)
-            Text(record.direction.title).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.testerDescription)
+                Text(record.isManual ? "Manual · \(record.measurementLabel)" : record.direction.title).foregroundStyle(.secondary)
+            }
             Spacer()
             Text(MeasurementFormat.milliseconds(record.result.center.durationMS))
             Label(record.isExcluded ? "Excluded" : record.result.quality.title,
@@ -413,9 +418,13 @@ private struct CameraReadingRow: View {
 struct CameraCoverageView: View {
     let session: CaptureSession
     let plannedSpeeds: [Double]
-    private var directions: [CurtainDirection] {
-        let all = Set(CameraResultGroup.groups(for: session).map { $0.direction.rawValue } + [session.direction.rawValue])
-        return CurtainDirection.allCases.filter { all.contains($0.rawValue) }
+    private var contexts: [CameraCoverageContext] {
+        let groups = CameraResultGroup.groups(for: session)
+        if groups.isEmpty { return [CameraCoverageContext(id: "empty", title: "No included complete readings", groups: [])] }
+        return Dictionary(grouping: groups) { $0.direction.rawValue + ":" + $0.contextID }.map { id, groups in
+            let first = groups[0]
+            return CameraCoverageContext(id: id, title: "\(first.direction.title) · \(first.contextDescription)", groups: groups)
+        }.sorted { $0.id < $1.id }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -425,10 +434,10 @@ struct CameraCoverageView: View {
                 Text("Target: \(session.repeatsPerSpeed ?? 3) readings per speed").font(.caption).foregroundStyle(.secondary)
             }
             if plannedSpeeds.isEmpty { Text("No planned speeds have been set.").font(.caption).foregroundStyle(.secondary) }
-            ForEach(directions, id: \.self) { direction in
-                let groups = CameraResultGroup.groups(for: session).filter { $0.direction == direction }
+            ForEach(contexts) { context in
+                let groups = context.groups
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("\(direction.title) curtain direction · \(plannedSpeeds.filter { speed in groups.contains { $0.denominator == speed } }.count) / \(plannedSpeeds.count) planned speeds measured")
+                    Text("\(context.title) · \(plannedSpeeds.filter { speed in groups.contains { $0.denominator == speed } }.count) / \(plannedSpeeds.count) planned speeds measured")
                         .font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 95), spacing: 8)], spacing: 8) {
                         ForEach(plannedSpeeds, id: \.self) { speed in
@@ -442,10 +451,16 @@ struct CameraCoverageView: View {
                     }
                 }
             }
-            Text("Only complete, included readings count. Reaching a repeat target describes coverage; it does not assess camera condition.")
+            Text("Only complete, included readings count. Each tester, source, mode and direction has its own repeat target. Coverage does not assess camera condition.")
                 .font(.caption).foregroundStyle(.secondary)
         }.cameraCard()
     }
+}
+
+private struct CameraCoverageContext: Identifiable {
+    let id: String
+    let title: String
+    let groups: [CameraResultGroup]
 }
 
 private struct CameraTestProvenanceView: View {
@@ -465,8 +480,12 @@ private struct CameraTestProvenanceView: View {
                 CameraFieldRow(title: "Operator", value: session.operatorName ?? "")
                 CameraFieldRow(title: "Light source", value: session.lightSource ?? "")
                 CameraFieldRow(title: "Conditions", value: session.testConditions ?? "")
-                CameraFieldRow(title: "Firmware observed", value: Set(session.records.map { $0.packet.firmware_version }).sorted().joined(separator: ", "))
-                CameraFieldRow(title: "Sensor / frame geometry", value: "32 × 20 mm / 36 × 24 mm")
+                CameraFieldRow(title: "Tester used", value: session.testerSummary)
+                CameraFieldRow(title: "Measurement sources", value: Set(session.records.map(\.resultContextDescription)).sorted().joined(separator: "\n"))
+                CameraFieldRow(title: "Firmware recorded", value: Set(session.records.map(\.firmwareVersion).filter { !$0.isEmpty }).sorted().joined(separator: ", "))
+                if session.records.contains(where: { !$0.isManual }) {
+                    CameraFieldRow(title: "USB sensor / frame geometry", value: "32 × 20 mm / 36 × 24 mm")
+                }
                 CameraFieldRow(title: "Test ID", value: session.id.uuidString)
                 CameraFieldRow(title: "Revision", value: String(session.effectiveRevision))
                 if let revision = session.cameraSnapshot?.catalogueRevision {
@@ -523,7 +542,9 @@ struct CameraResultGroup: Identifiable {
     let denominator: Double
     let direction: CurtainDirection
     let records: [MeasurementRecord]
-    var id: String { "\(denominator):\(direction.rawValue)" }
+    var contextID: String { records.first?.resultContextID ?? "" }
+    var contextDescription: String { records.first?.resultContextDescription ?? "" }
+    var id: String { "\(denominator):\(direction.rawValue):\(contextID)" }
     var count: Int { records.count }
     var meanMS: Double { records.compactMap { $0.result.center.durationMS }.reduce(0, +) / Double(count) }
     var errorStops: Double { log2(meanMS * denominator / 1000) }
@@ -537,11 +558,15 @@ struct CameraResultGroup: Identifiable {
         let eligible = session.records.filter {
             !$0.isExcluded && $0.isDemo == session.demo && $0.result.quality == .complete && ($0.result.center.durationMS ?? 0) > 0
         }
-        let grouped = Dictionary(grouping: eligible) { "\($0.nominalDenominator):\($0.direction.rawValue)" }
+        let grouped = Dictionary(grouping: eligible) { "\($0.nominalDenominator):\($0.direction.rawValue):\($0.resultContextID)" }
         return grouped.values.compactMap { records -> CameraResultGroup? in
             guard let first = records.first else { return nil }
             return CameraResultGroup(denominator: first.nominalDenominator, direction: first.direction, records: records)
-        }.sorted { $0.denominator == $1.denominator ? $0.direction.rawValue < $1.direction.rawValue : $0.denominator < $1.denominator }
+        }.sorted {
+            if $0.denominator != $1.denominator { return $0.denominator < $1.denominator }
+            if $0.direction != $1.direction { return $0.direction.rawValue < $1.direction.rawValue }
+            return $0.contextID < $1.contextID
+        }
     }
 }
 

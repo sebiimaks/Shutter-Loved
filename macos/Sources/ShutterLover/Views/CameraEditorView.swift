@@ -4,9 +4,11 @@ import MeasurementCore
 /// Edits catalogue metadata and future defaults; captured test identities remain snapshots.
 struct CameraEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var model: AppModel
     @State private var camera: CameraProfile
     @State private var speedText: String
     @State private var section = 0
+    @State private var showMountChooser = false
     let onSave: (CameraProfile) -> Void
 
     init(camera: CameraProfile, onSave: @escaping (CameraProfile) -> Void) {
@@ -60,6 +62,9 @@ struct CameraEditorView: View {
                 }
             }.padding(20)
         }.frame(width: 620, height: 660)
+            .sheet(isPresented: $showMountChooser) {
+                CameraMountChooserView(mounts: model.flangeMountRows, selectedMount: $camera.mount)
+            }
     }
 
     @ViewBuilder private var identityFields: some View {
@@ -86,7 +91,12 @@ struct CameraEditorView: View {
             TextField("Film / image format", text: $camera.format)
             TextField("Frame dimensions (e.g. 36 × 24 mm)", text: $camera.frameSize)
             TextField("Shutter type", text: $camera.shutterType)
-            TextField("Lens mount", text: $camera.mount)
+            HStack(alignment: .firstTextBaseline) {
+                TextField("Lens mount", text: $camera.mount)
+                Button("Choose mount…") { showMountChooser = true }
+                    .help("Choose a specific mount from the flange-distance table. You can also enter your own mount name.")
+            }
+            mountDistanceStatus
             TextField("Lens", text: $camera.lens)
             TextField("Lens serial number", text: $camera.lensSerial)
             TextField("Approximate production year", text: $camera.productionYear)
@@ -104,6 +114,23 @@ struct CameraEditorView: View {
         }
     }
 
+    @ViewBuilder private var mountDistanceStatus: some View {
+        let matches = model.flangeMatches(camera.mount)
+        if matches.count == 1, let match = matches.first {
+            Label("Flange distance: \(match.distanceMM.formatted(.number.precision(.fractionLength(0...4)))) mm", systemImage: "ruler")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if matches.count > 1 {
+            Text("This mount name has more than one possible flange distance. Choose a specific mount for tester positioning.")
+                .font(.caption).foregroundStyle(.orange)
+        } else if camera.mount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Text("Choose a mount to calculate positioning for a calibrated Shutter Lover.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text("No flange distance matches this mount. You can keep this name, but automatic tester positioning needs a mount from the table.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     @ViewBuilder private var ownershipFields: some View {
         Section("Condition and notes") {
             TextField("Condition, meter, light seals and quirks", text: $camera.condition, axis: .vertical).lineLimit(3...6)
@@ -117,6 +144,68 @@ struct CameraEditorView: View {
             TextField("Storage location", text: $camera.storageLocation)
             Toggle("Archived camera", isOn: $camera.archived)
         }
+    }
+}
+
+/// Choosing a mount only edits the camera form; its Save / Cancel action still controls persistence.
+private struct CameraMountChooserView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+    let mounts: [FlangeDistanceRow]
+    @Binding var selectedMount: String
+
+    private var filteredMounts: [FlangeDistanceRow] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return mounts.filter { query.isEmpty || $0.name.localizedStandardContains(query) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Choose lens mount").font(.title2.weight(.semibold))
+                Text("Choose the camera body's mount. Flange distance is measured from the mounting flange to the film or sensor plane.")
+                    .font(.callout).foregroundStyle(.secondary)
+                TextField("Search lens mounts", text: $search)
+                    .textFieldStyle(.roundedBorder)
+            }.padding(20)
+            Divider()
+            List {
+                ForEach(filteredMounts, id: \.id) { mount in
+                    Button {
+                        selectedMount = mount.name
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text(mount.name)
+                            Spacer(minLength: 12)
+                            Text("\(mount.distanceMM.formatted(.number.precision(.fractionLength(0...4)))) mm")
+                                .monospacedDigit().foregroundStyle(.secondary)
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                                .opacity(selectedMount == mount.name ? 1 : 0)
+                        }
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(mount.name), \(mount.distanceMM.formatted()) millimetres")
+                }
+            }
+            .overlay {
+                if filteredMounts.isEmpty {
+                    ContentUnavailableView.search(text: search)
+                }
+            }
+            Divider()
+            HStack {
+                Text("Flange distances can be edited in Settings.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }.padding(20)
+        }.frame(width: 570, height: 560)
     }
 }
 
