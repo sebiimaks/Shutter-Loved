@@ -9,3 +9,10 @@ The only intentional code difference between the maintained branches is `macos/S
 A merge conflict, failed test, missing branch, disabled integration flag or rejected push stops the sync without updating the remote integration branch. The Actions run records the failure. Resolve conflicts on lucis-integration while keeping its flag enabled, run the tests, push that resolution and rerun the workflow. Do not use a force push or an `ours` merge strategy to hide conflicts. GitHub Actions must remain enabled and permitted to write repository contents.
 
 When ready to reintegrate, open a pull request from lucis-integration to main. Its enabled flag restores the Armarium controls. Remove the sync workflow once the branch is no longer needed. Stored camera catalogue identities and historical exports are retained throughout.
+
+## Initial validation — 30 September 2026
+
+- Swift tests passed on both branches: 155 passed, one existing host-dependent serial-port test skipped, no failures.
+- Main's Apple Silicon release build is version 0.3.4 (build 10). Native UI inspection confirmed the disabled **Import Camera Catalogue…** File command and the removed Armarium buttons. The saved library was unchanged after launch.
+- Isolated Git fixtures verified successful merging, repeated no-op runs, conflict recovery, missing-branch handling, rejection of a disabled integration flag, and rejection of a concurrent remote update without overwriting it.
+- The [initial GitHub Actions run](https://github.com/sebiimaks/Shutter-Loved/actions/runs/36721485650) passed with the integration branch already containing main. This validation note provides the next main update for the workflow to merge and test.
