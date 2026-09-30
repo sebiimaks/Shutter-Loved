@@ -9,6 +9,14 @@ import UniformTypeIdentifiers
 final class AppModel: ObservableObject {
     @Published var sessions: [CaptureSession] = []
     @Published var cameras: [CameraProfile] = []
+    @Published var ownedTesters: [OwnedTester] = []
+    @Published var showTesters = false
+    @Published var manualEntrySessionID: UUID?
+    @Published var selectedConnectionTesterID: UUID?
+    @Published var connectionTesterSnapshot: TesterSnapshot?
+    @Published var flangeDistanceConfiguration = FlangeDistanceConfiguration()
+    @Published var flangeSettingsError: String?
+    @Published var flangeSettingsLoadFailed = false
     @Published var selectedCameraID: UUID?
     @Published var showCameraLibrary = true
     @Published var editingCamera: CameraProfile?
@@ -20,7 +28,9 @@ final class AppModel: ObservableObject {
     @Published var selectedRecordID: UUID?
     @Published var pendingDeleteSessionID: UUID?
     @Published var devices: [SerialDevice] = []
-    @Published var selectedPortPath = ""
+    @Published var selectedPortPath = "" {
+        didSet { if oldValue != selectedPortPath { selectedConnectionTesterID = nil } }
+    }
     @Published var connectionStatus = "Not connected"
     @Published var isConnected = false
     @Published var isConnecting = false
@@ -41,7 +51,7 @@ final class AppModel: ObservableObject {
 
     private struct DeletedReading { let sessionID: UUID; let record: MeasurementRecord; let index: Int }
     let store: SessionStore
-    private let preferences: UserDefaults
+    let preferences: UserDefaults
     private let connection = SerialConnection()
     private var framer = LineFramer()
     private var connectionToken = UUID()
@@ -71,10 +81,12 @@ final class AppModel: ObservableObject {
         self.store = store
         self.preferences = preferences
         showDemoSessions = preferences.object(forKey: "showDemoSessions") as? Bool ?? true
+        loadFlangeDistanceSettings()
         do {
             let library = try store.loadLibrary()
             sessions = library.sessions
             cameras = library.cameras
+            ownedTesters = library.ownedTesters
             libraryID = library.libraryID
             selectedCameraID = cameras.first?.id
         } catch {
@@ -95,7 +107,8 @@ final class AppModel: ObservableObject {
 
     func newSession(demo: Bool, revealDemo: Bool = true) {
         if demo && revealDemo { setShowDemoSessions(true) }
-        let session = CaptureSession(cameraName: demo ? "Demo camera" : "Untitled camera", demo: demo)
+        var session = CaptureSession(cameraName: demo ? "Demo camera" : "Untitled camera", demo: demo)
+        if !demo { session.tester = connectionTesterSnapshot }
         sessions.insert(session, at: 0)
         selectSession(session.id)
         if !demo && (isConnected || isConnecting || wantsConnection) { activeCaptureSessionID = session.id }
@@ -199,7 +212,7 @@ final class AppModel: ObservableObject {
         saveTask?.cancel()
         guard !libraryReadFailed else { saveStatus = "Not saved · export this session"; return }
         do {
-            try store.saveLibrary(CameraLibraryArchive(libraryID: libraryID, cameras: cameras, sessions: sessions))
+            try store.saveLibrary(CameraLibraryArchive(libraryID: libraryID, cameras: cameras, sessions: sessions, ownedTesters: ownedTesters))
             saveStatus = "Saved locally"
         } catch {
             saveStatus = "Not saved · export this session"
@@ -209,31 +222,56 @@ final class AppModel: ObservableObject {
     }
 
     /// Persist a complete candidate before publishing changes to the UI.
-    func commitLibrary(cameras candidateCameras: [CameraProfile], sessions candidateSessions: [CaptureSession]) throws {
+    func commitLibrary(cameras candidateCameras: [CameraProfile], sessions candidateSessions: [CaptureSession], ownedTesters candidateTesters: [OwnedTester]? = nil) throws {
         guard !libraryReadFailed else { throw SessionStoreError.invalid("The saved library could not be opened; it has been left untouched.") }
         saveTask?.cancel()
-        try store.saveLibrary(CameraLibraryArchive(libraryID: libraryID, cameras: candidateCameras, sessions: candidateSessions))
+        let testers = candidateTesters ?? ownedTesters
+        try store.saveLibrary(CameraLibraryArchive(libraryID: libraryID, cameras: candidateCameras, sessions: candidateSessions, ownedTesters: testers))
         cameras = candidateCameras
         sessions = candidateSessions
+        ownedTesters = testers
         saveStatus = "Saved locally"
     }
 
     func refreshDevices() {
         let discovered = SerialDiscovery.devices()
         if devices != discovered { devices = discovered }
-        if selectedPortPath.isEmpty {
-            let remembered = UserDefaults.standard.string(forKey: "lastSerialPath") ?? ""
-            if devices.contains(where: { $0.path == remembered }) { selectedPortPath = remembered }
+        if selectedPortPath.isEmpty || !devices.contains(where: { $0.path == selectedPortPath }) {
+            let rememberedKey = preferences.string(forKey: "lastUSBIdentityKey")
+            let matches = devices.filter { rememberedKey != nil && $0.stableIdentityKey == rememberedKey }
+            if matches.count == 1 { selectedPortPath = matches[0].path }
+            else if selectedPortPath.isEmpty {
+                let remembered = preferences.string(forKey: "lastSerialPath") ?? ""
+                if devices.contains(where: { $0.path == remembered }) { selectedPortPath = remembered }
+            }
         }
         if wantsConnection && !isConnected && !isConnecting && Date() >= nextRetry {
-            if devices.contains(where: { $0.path == lastRequestedPort }) { beginConnection(path: lastRequestedPort) }
+            if let key = connectionTesterSnapshot?.usbIdentity?.stableIdentityKey {
+                let matches = devices.filter { $0.stableIdentityKey == key }
+                if matches.count == 1 {
+                    lastRequestedPort = matches[0].path
+                    selectedPortPath = matches[0].path
+                    beginConnection(path: lastRequestedPort)
+                }
+            }
         }
     }
 
     func connect() {
+        guard !isConnected && !isConnecting && activeCaptureSessionID == nil else { errorMessage = "Disconnect the current tester before opening another connection."; return }
         guard !selectedPortPath.isEmpty else { errorMessage = "Choose the serial device connected to your Shutter Lover."; return }
-        guard devices.contains(where: { $0.path == selectedPortPath }) else { errorMessage = "That serial device is no longer available. Reconnect it and choose it again."; return }
+        guard let device = devices.first(where: { $0.path == selectedPortPath }) else { errorMessage = "That serial device is no longer available. Reconnect it and choose it again."; return }
+        if let problem = connectionIdentityProblem { errorMessage = problem; return }
+        let tester = connectionTester(for: device)
+        guard tester.model.supportsUSBRecording else { errorMessage = "\(tester.model.displayName) currently uses manual entry in Shutter Loved. Choose a Shutter Lover for USB capture."; return }
+        guard prepareCameraForConnection() else { return }
+        if let session = currentSession, !session.demo, !canRecordUSB(in: session) {
+            errorMessage = "This is a Baby tester test. Start a new test for Shutter Lover USB readings."
+            return
+        }
         if currentSession == nil || isDemoMode { newSession(demo: false) }
+        guard let sessionID = selectedSessionID, setSessionTester(sessionID, tester: tester) else { return }
+        connectionTesterSnapshot = tester
         activeCaptureSessionID = selectedSessionID
         wantsConnection = true
         retryDelay = 2
@@ -263,6 +301,7 @@ final class AppModel: ObservableObject {
         isConnecting = false
         connectionStatus = "Not connected"
         activeCaptureSessionID = nil
+        connectionTesterSnapshot = nil
     }
 
     private func handleSerial(_ event: SerialEvent, token: UUID) {
@@ -273,7 +312,8 @@ final class AppModel: ObservableObject {
             isConnecting = false
             retryDelay = 2
             connectionStatus = "Listening · awaiting device data"
-            UserDefaults.standard.set(lastRequestedPort, forKey: "lastSerialPath")
+            preferences.set(lastRequestedPort, forKey: "lastSerialPath")
+            preferences.set(connectionTesterSnapshot?.usbIdentity?.stableIdentityKey, forKey: "lastUSBIdentityKey")
             appendDiagnostic("Opened \(lastRequestedPort) at 9600/8N1. Device identity is not yet verified.")
         case .bytes(let data):
             let before = framer.droppedLineCount
@@ -300,7 +340,13 @@ final class AppModel: ObservableObject {
         isConnected = false
         isConnecting = false
         framer.reset()
-        connectionStatus = wantsConnection ? "Reconnecting · \(reason)" : "Not connected"
+        if connectionTesterSnapshot?.usbIdentity == nil {
+            wantsConnection = false
+            activeCaptureSessionID = nil
+            connectionStatus = "Disconnected · verify the device and connect again (no unique USB identity)"
+        } else {
+            connectionStatus = wantsConnection ? "Reconnecting · \(reason)" : "Not connected"
+        }
         nextRetry = Date().addingTimeInterval(retryDelay)
         retryDelay = min(retryDelay * 2, 30)
     }
@@ -319,8 +365,18 @@ final class AppModel: ObservableObject {
             return
         }
         let snapshot = sessions[index]
+        guard simulated || canRecordUSB(in: snapshot) else {
+            appendDiagnostic("USB readings cannot be added to a Baby tester test.")
+            return
+        }
         var record = MeasurementRecord(rawLine: raw, packet: packet, direction: snapshot.direction, nominalDenominator: snapshot.nominalDenominator, isDemo: simulated)
         record.devicePath = simulated ? nil : lastRequestedPort
+        if !simulated {
+            var tester = connectionTesterSnapshot ?? snapshot.tester ?? TesterSnapshot(model: .shutterLover)
+            tester.firmwareVersion = packet.firmware_version
+            tester.devicePath = lastRequestedPort.isEmpty ? nil : lastRequestedPort
+            record.tester = tester
+        }
         record.derivedSnapshot = record.result
         sessions[index].records.append(record)
         sessions[index].markUpdated()
@@ -359,7 +415,7 @@ final class AppModel: ObservableObject {
         sessions[s].records[r].settingCorrections.append(SettingCorrection(changedAt: Date(), previousValue: previous, newValue: value))
         sessions[s].records[r].nominalDenominator = value
         let record = sessions[s].records[r]
-        sessions[s].records[r].derivedSnapshot = MeasurementResult.calculate(packet: record.packet, direction: record.direction, nominalDenominator: value)
+        sessions[s].records[r].derivedSnapshot = record.recalculatedResult
         sessions[s].markUpdated()
         saveNow()
     }

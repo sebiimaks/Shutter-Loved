@@ -21,15 +21,17 @@ Export **Armarium JSON** from an individual real camera test. Import the result 
 
 - The producer database UUID remains stable. Each test uses its existing session UUID and revision; correcting a run increments its revision, while a genuinely new run receives a new UUID.
 - Results target the catalogue/camera identity captured when that test began. An unlinked test must first be explicitly assigned by the operator to an imported camera, or a new test started from that camera. Retrospective assignment is recorded with its timestamp and the original camera name in exported provenance notes; it is never inferred by name or serial.
-- Each included, complete device reading contributes three exposure durations and, when positive, two calibrated outer-sensor curtain travel intervals. Every value and nominal duration is numeric **seconds**, with `unit: "s"`.
+- Each included, complete **Shutter Lover USB reading** contributes three exposure durations and, when positive, two calibrated outer-sensor curtain travel intervals. Every value and nominal duration is numeric **seconds**, with `unit: "s"`.
+- Each included, valid **Baby Shutter Tester Mk I or Mk II manual reading** contributes one `exposureDuration` in numeric seconds. Its sensor position is unknown, so `position`, corner exposures and curtain travel are omitted. Version 1 has no separate effective-exposure quantity: per-sample notes identify Mk II values as **effective exposure** and Mk I values as **measured exposure**, preserving the distinction and the fact that the display was manually transcribed.
 - Exposure nominal values are `1 / nominalDenominator`. An 8.2 ms duration is `0.0082` seconds. Reciprocal speeds, percentages and exposure errors are not exported as durations.
-- Curtain intervals span the documented 32 × 20 mm sensor rectangle. Full-frame extrapolations are estimates and are **not** exported as measured travel.
+- Shutter Lover USB curtain intervals span the documented 32 × 20 mm sensor rectangle. Full-frame extrapolations are estimates and are **not** exported as measured travel.
 - The original one-based reading position is `sampleIndex`; gaps therefore remain when readings are excluded. Run notes map exported sample numbers to immutable local reading UUIDs, capture times and curtain directions. Reading order is preserved.
+- Tester details use the existing v1 `tester` fields for manufacturer, model, serial and firmware when applicable and consistent across included readings. Per-sample notes retain each reading's captured tester identity, owned-tester UUID and USB identity where recorded; manual notes also retain the original value and unit, mode, supplied illumination values and entry notes. Selecting or editing a tester later does not relabel earlier readings. No new fields or capabilities are added to the v1 contract.
 - Partial, invalid and excluded readings are omitted with a count and explanation. Zero/unavailable curtain intervals are omitted and counted. Demonstration sessions or mixed simulated/device records are blocked entirely. A run with no qualifying measurements is blocked.
-- Version 1 permits 512 structured quantities per test. A typical complete three-sensor reading contributes five quantities, so 102 such readings fit. Larger exports fail visibly; they are never silently truncated or assigned artificial run identities.
+- Version 1 permits 512 structured quantities per test. A typical complete three-sensor Shutter Lover USB reading contributes five quantities, so 102 such readings fit; a Baby manual reading contributes one. The separate 16 KiB notes limit may be reached sooner. Larger exports fail visibly; they are never silently truncated or assigned artificial run identities.
 - Light source and test conditions are included when supplied. Test notes are included; private camera acquisition details, photos, service history and raw packets are not part of the exchange.
 
-The JSON format cannot represent the full Shutter Loved evidence model. Use **Full camera archive** to retain raw packets, calibration, invalid/partial/excluded readings, correction history, calculation snapshots and camera media. An Armarium JSON file is a deliberately narrower interchange record, not a Shutter Loved backup.
+The JSON format cannot represent the full Shutter Loved evidence model. Use **Full camera archive** to retain raw packets where present, original manual entries, tester snapshots, calibration, invalid/partial/excluded readings, correction history, calculation snapshots and camera media. An Armarium JSON file is a deliberately narrower interchange record, not a Shutter Loved backup.
 
 ## Defensive parsing
 
@@ -38,6 +40,8 @@ Import and result validation reject unsupported fields, explicit null, duplicate
 ## Verification and provenance
 
 `macos/Tests/ShutterLoverTests/ShutterTesterExchangeTests.swift` exercises the independent public fixtures, catalogue namespace and revision handling, duplicate/stale/conflict review, intervening-edit checks, parser boundaries, identity-preserving export, numeric seconds, omitted evidence, result limits and rejection of simulated data.
+
+`macos/Tests/ShutterLoverTests/TesterResultsTests.swift` covers Baby Mk I and Mk II manual exports, conversion to numeric seconds, omitted sensor/travel quantities, tester and manual-entry provenance, mixed tester metadata, preservation of legacy USB export evidence, and manual-entry archive round trips. These local tests do not constitute a fresh receiving-process check in Armarium Lucis for Baby readings; the external verification below records the earlier Shutter Lover USB implementation.
 
 Public contract references are copied under `docs/fixtures/shutter-tester-v1/` for reproducible tests:
 

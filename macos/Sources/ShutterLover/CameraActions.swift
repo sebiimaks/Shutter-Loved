@@ -35,6 +35,7 @@ extension AppModel {
     func newCameraTest(_ cameraID: UUID, title: String = "Shutter test") {
         guard let camera = cameras.first(where: { $0.id == cameraID }) else { return }
         var session = CaptureSession(cameraName: camera.name, demo: false)
+        session.tester = connectionTesterSnapshot
         session.cameraID = camera.id
         session.cameraSnapshot = CameraIdentitySnapshot(camera: camera)
         session.direction = camera.defaultDirection
@@ -59,7 +60,10 @@ extension AppModel {
 
     func recordIntoSelectedTest() {
         guard let session = currentSession, !session.demo else { return }
+        guard canRecordUSB(in: session) else { errorMessage = "Baby tester tests use manual entry. Start a Shutter Lover test for USB capture."; return }
         guard isConnected || isConnecting || activeCaptureSessionID != nil else { return }
+        if activeCaptureSessionID == session.id { return }
+        if let tester = connectionTesterSnapshot, !setSessionTester(session.id, tester: tester) { return }
         activeCaptureSessionID = session.id
     }
 

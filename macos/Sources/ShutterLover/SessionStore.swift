@@ -11,7 +11,9 @@ struct MeasurementRecord: Identifiable, Codable {
     var id = UUID()
     var capturedAt = Date()
     var rawLine: String
-    var packet: MeasurementPacket
+    var packet: MeasurementPacket?
+    var manual: ManualMeasurement?
+    var tester: TesterSnapshot?
     var direction: CurtainDirection
     var nominalDenominator: Double
     var isDemo: Bool
@@ -25,9 +27,25 @@ struct MeasurementRecord: Identifiable, Codable {
     var frameHeightMM = 24.0
     var derivedSnapshot: MeasurementResult?
 
-    var result: MeasurementResult {
-        derivedSnapshot ?? MeasurementResult.calculate(packet: packet, direction: direction, nominalDenominator: nominalDenominator)
+    var isManual: Bool { manual != nil }
+    var firmwareVersion: String { packet?.firmware_version ?? tester?.firmwareVersion ?? "" }
+    var testerDescription: String {
+        if let tester { return tester.displayName }
+        return packet == nil ? "Tester not recorded" : "Shutter Lover (individual tester not recorded)"
     }
+    var measurementLabel: String {
+        manual == nil ? "Center exposure" : (tester?.model.measurementLabel ?? "Measured exposure")
+    }
+    var recalculatedResult: MeasurementResult {
+        if let manual {
+            return MeasurementResult.manualResult(durationSeconds: manual.seconds, nominalDenominator: nominalDenominator)
+        }
+        if let packet {
+            return MeasurementResult.calculate(packet: packet, direction: direction, nominalDenominator: nominalDenominator)
+        }
+        return MeasurementResult.manualResult(durationSeconds: .nan, nominalDenominator: nominalDenominator)
+    }
+    var result: MeasurementResult { derivedSnapshot ?? recalculatedResult }
 }
 
 struct CaptureSession: Identifiable, Codable {
@@ -41,6 +59,7 @@ struct CaptureSession: Identifiable, Codable {
     var autoAdvance = false
     var demo: Bool
     var records: [MeasurementRecord] = []
+    var tester: TesterSnapshot?
     // Optional additions deliberately keep original schema-1 files decodable.
     var cameraID: UUID?
     var cameraSnapshot: CameraIdentitySnapshot?
@@ -74,7 +93,7 @@ struct CaptureSession: Identifiable, Codable {
 }
 
 struct SessionArchive: Codable {
-    var schemaVersion = 1
+    var schemaVersion = 2
     var sessions: [CaptureSession]
 }
 
@@ -95,6 +114,7 @@ struct SessionStore {
     let directory: URL
     var libraryURL: URL { directory.appendingPathComponent("sessions.json") }
     var cameraLibraryURL: URL { directory.appendingPathComponent("library.json") }
+    var testerMigrationBackupURL: URL { directory.appendingPathComponent("library.pre-tester-library.json") }
     var migrationBackupURL: URL { directory.appendingPathComponent("sessions.pre-camera-library.json") }
 
     static func standard() -> SessionStore {
@@ -133,7 +153,7 @@ struct SessionStore {
     static func decode(_ data: Data) throws -> [CaptureSession] {
         guard data.count <= 64 * 1024 * 1024 else { throw SessionStoreError.tooLarge }
         let archive = try decoder().decode(SessionArchive.self, from: data)
-        guard archive.schemaVersion == 1 else { throw SessionStoreError.unsupportedVersion(archive.schemaVersion) }
+        guard (1...2).contains(archive.schemaVersion) else { throw SessionStoreError.unsupportedVersion(archive.schemaVersion) }
         try validate(archive.sessions)
         return archive.sessions
     }
@@ -160,6 +180,7 @@ struct SessionStore {
                 try validateText([snapshot.name, snapshot.manufacturer, snapshot.model, snapshot.serial, snapshot.inventoryID])
                 try validateCatalogueIdentity(snapshot.catalogueID, snapshot.catalogueCameraID, snapshot.catalogueRevision)
             }
+            if let tester = session.tester { try validateTesterSnapshot(tester) }
             for record in session.records {
                 guard ids.count < 100_000 else { throw SessionStoreError.invalid("too many readings") }
                 guard ids.insert(record.id).inserted else { throw SessionStoreError.invalid("duplicate reading identifiers") }
@@ -182,18 +203,114 @@ struct SessionStore {
                 guard record.sensorWidthMM == 32, record.sensorHeightMM == 20, record.frameWidthMM == 36, record.frameHeightMM == 24 else {
                     throw SessionStoreError.invalid("this version only calculates the documented 32 × 20 mm sensor and 36 × 24 mm frame geometry")
                 }
-                let packetData = try encoder().encode(record.packet)
-                guard case .measurement = PacketParser.parse(packetData) else {
-                    throw SessionStoreError.invalid("unsupported measurement packet")
+                if let tester = record.tester { try validateTesterSnapshot(tester) }
+                guard (record.packet == nil) != (record.manual == nil) else {
+                    throw SessionStoreError.invalid("a reading must contain either a device packet or a manual measurement")
                 }
-                guard case .measurement(let original) = PacketParser.parse(Data(record.rawLine.utf8)), original == record.packet else {
-                    throw SessionStoreError.invalid("original packet and decoded measurement disagree")
+                if let packet = record.packet {
+                    if let tester = record.tester, !tester.model.supportsUSBRecording {
+                        throw SessionStoreError.invalid("the recorded tester does not support USB measurements")
+                    }
+                    let packetData = try encoder().encode(packet)
+                    guard case .measurement = PacketParser.parse(packetData) else {
+                        throw SessionStoreError.invalid("unsupported measurement packet")
+                    }
+                    guard case .measurement(let original) = PacketParser.parse(Data(record.rawLine.utf8)), original == packet else {
+                        throw SessionStoreError.invalid("original packet and decoded measurement disagree")
+                    }
                 }
-                if let snapshot = record.derivedSnapshot,
-                   snapshot != MeasurementResult.calculate(packet: record.packet, direction: record.direction, nominalDenominator: record.nominalDenominator) {
-                    throw SessionStoreError.invalid("stored calculation does not match its original packet and settings")
+                if let manual = record.manual {
+                    guard !record.isDemo, record.rawLine.isEmpty, let tester = record.tester, tester.model.supportsManualEntry,
+                          record.direction == .unknown, record.devicePath == nil, tester.usbIdentity == nil, tester.devicePath == nil else {
+                        throw SessionStoreError.invalid("manual readings require a Baby Shutter Tester and must not contain simulated or USB evidence")
+                    }
+                    try validateManualMeasurement(manual, model: tester.model)
+                }
+                if let snapshot = record.derivedSnapshot, snapshot != record.recalculatedResult {
+                    throw SessionStoreError.invalid("stored calculation does not match its original measurement and settings")
                 }
             }
+        }
+    }
+
+    static func validateManualMeasurement(_ measurement: ManualMeasurement, model: TesterModel) throws {
+        guard model.supportsManualEntry, measurement.enteredValue.isFinite, measurement.enteredValue > 0,
+              measurement.seconds.isFinite, (0.000001...1_000).contains(measurement.seconds) else {
+            throw SessionStoreError.invalid("entered exposure must be between 1 microsecond and 1,000 seconds")
+        }
+        try validateText([measurement.notes])
+        for illumination in [measurement.illumination, measurement.seriesIllumination].compactMap({ $0 }) {
+            guard illumination.isFinite, (0...100).contains(illumination) else {
+                throw SessionStoreError.invalid("illumination must be a unitless value between 0 and 100")
+            }
+        }
+        if measurement.seriesIllumination != nil, measurement.mode != .global {
+            throw SessionStoreError.invalid("series illumination is available only for Global mode")
+        }
+        if let current = measurement.illumination, let maximum = measurement.seriesIllumination, maximum < current {
+            throw SessionStoreError.invalid("series maximum illumination cannot be lower than the current reading")
+        }
+        if model == .babyShutterTesterMkI,
+           measurement.mode != .unspecified || measurement.illumination != nil || measurement.seriesIllumination != nil {
+            throw SessionStoreError.invalid("Mk I readings do not use Mk II measurement modes or illumination fields")
+        }
+    }
+
+    static func validateUSBIdentity(_ identity: TesterUSBIdentity) throws {
+        guard (0...65_535).contains(identity.vendorID), (0...65_535).contains(identity.productID),
+              !identity.serialNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SessionStoreError.invalid("USB matching requires valid vendor/product identifiers and a nonempty serial number")
+        }
+        try validateText([identity.serialNumber])
+    }
+
+    static func validateTesterSnapshot(_ tester: TesterSnapshot) throws {
+        try validateText([tester.name, tester.serialNumber, tester.firmwareVersion, tester.calibrationNotes, tester.devicePath ?? ""])
+        if let date = tester.calibrationDate, !validDate(date) { throw SessionStoreError.invalid("invalid tester calibration date") }
+        try validateCalibratedOptimalDistance(tester.calibratedOptimalDistanceMM, model: tester.model)
+        if let identity = tester.usbIdentity {
+            guard tester.model.supportsUSBRecording else { throw SessionStoreError.invalid("this tester model cannot have a USB recording identity") }
+            try validateUSBIdentity(identity)
+        }
+        if tester.devicePath != nil, !tester.model.supportsUSBRecording {
+            throw SessionStoreError.invalid("this tester model cannot have a USB recording path")
+        }
+    }
+
+    static func validateOwnedTesters(_ testers: [OwnedTester]) throws {
+        guard testers.count <= 1_000 else { throw SessionStoreError.invalid("too many owned testers") }
+        guard Set(testers.map(\.id)).count == testers.count else { throw SessionStoreError.invalid("duplicate tester identifiers") }
+        var bindings = Set<String>()
+        for tester in testers {
+            guard !tester.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw SessionStoreError.invalid("owned testers need a name")
+            }
+            try validateText([tester.name, tester.serialNumber, tester.firmwareVersion, tester.notes, tester.calibrationNotes])
+            if let date = tester.calibrationDate, !validDate(date) { throw SessionStoreError.invalid("invalid tester calibration date") }
+            try validateCalibratedOptimalDistance(tester.calibratedOptimalDistanceMM, model: tester.model)
+            if let certificate = tester.calibrationCertificate {
+                guard tester.model == .shutterLover else {
+                    throw SessionStoreError.invalid("calibration certificates are supported only for Shutter Lover testers")
+                }
+                try certificate.validate()
+            }
+            if let binding = tester.usbBinding {
+                try validateUSBIdentity(binding)
+                guard bindings.insert(binding.stableIdentityKey).inserted else {
+                    throw SessionStoreError.invalid("a USB tester is already linked to another inventory entry")
+                }
+            }
+        }
+    }
+
+    static func validateCalibratedOptimalDistance(_ distance: Double?, model: TesterModel) throws {
+        guard let distance else { return }
+        guard model == .shutterLover else {
+            throw SessionStoreError.invalid("calibrated optimal distance is supported only for Shutter Lover testers")
+        }
+        // An input sanity limit, not a statement about the hardware's range.
+        guard distance.isFinite, distance > 0, distance <= 10_000 else {
+            throw SessionStoreError.invalid("calibrated optimal distance must be greater than zero and no more than 10,000 mm")
         }
     }
 
@@ -221,15 +338,16 @@ struct SessionStore {
     static func decodeLibrary(_ data: Data) throws -> CameraLibraryArchive {
         guard data.count <= 64 * 1024 * 1024 else { throw SessionStoreError.tooLarge }
         let archive = try decoder().decode(CameraLibraryArchive.self, from: data)
-        guard archive.schemaVersion == 2 else { throw SessionStoreError.unsupportedVersion(archive.schemaVersion) }
+        guard (2...3).contains(archive.schemaVersion) else { throw SessionStoreError.unsupportedVersion(archive.schemaVersion) }
         try validateLibrary(archive)
         return archive
     }
 
     static func validateLibrary(_ archive: CameraLibraryArchive) throws {
-        guard archive.schemaVersion == 2 else { throw SessionStoreError.unsupportedVersion(archive.schemaVersion) }
+        guard (2...3).contains(archive.schemaVersion) else { throw SessionStoreError.unsupportedVersion(archive.schemaVersion) }
         guard archive.cameras.count <= 10_000 else { throw SessionStoreError.invalid("too many cameras") }
         try validate(archive.sessions)
+        try validateOwnedTesters(archive.ownedTesters)
         let cameraIDs = Set(archive.cameras.map(\.id))
         guard cameraIDs.count == archive.cameras.count else { throw SessionStoreError.invalid("duplicate camera identifiers") }
         let sessionsByID = Dictionary(uniqueKeysWithValues: archive.sessions.map { ($0.id, $0) })
@@ -292,7 +410,16 @@ struct SessionStore {
     /// Sessions remain unassigned until the user chooses a physical camera.
     func loadLibrary() throws -> CameraLibraryArchive {
         if FileManager.default.fileExists(atPath: cameraLibraryURL.path) {
-            return try Self.decodeLibrary(Self.readLimited(cameraLibraryURL))
+            let original = try Self.readLimited(cameraLibraryURL)
+            var archive = try Self.decodeLibrary(original)
+            if archive.schemaVersion == 2 {
+                if !FileManager.default.fileExists(atPath: testerMigrationBackupURL.path) {
+                    try original.write(to: testerMigrationBackupURL, options: .atomic)
+                }
+                archive.schemaVersion = 3
+                try saveLibrary(archive)
+            }
+            return archive
         }
         let sessions = try load()
         let archive = CameraLibraryArchive(sessions: sessions)
@@ -307,6 +434,11 @@ struct SessionStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: cameraLibraryURL.path) {
             let previous = try Self.readLimited(cameraLibraryURL)
+            let existing = try Self.decodeLibrary(previous)
+            if existing.schemaVersion == 2, archive.schemaVersion == 3,
+               !FileManager.default.fileExists(atPath: testerMigrationBackupURL.path) {
+                try previous.write(to: testerMigrationBackupURL, options: .atomic)
+            }
             try previous.write(to: directory.appendingPathComponent("library.previous.json"), options: .atomic)
         } else if FileManager.default.fileExists(atPath: libraryURL.path),
                   !FileManager.default.fileExists(atPath: migrationBackupURL.path) {
@@ -345,7 +477,7 @@ struct SessionStore {
 }
 
 enum SessionExport {
-    static let headers = ["Reading", "Reading ID", "Received", "Setting (1/s)", "Speed (1/s)", "Time (ms)", "Open (ms)", "Close (ms)", "Open ext", "Close ext", "Speed Bot. L.", "Time Bot. L.", "Speed Top R.", "Time Top R.", "Open 1/2", "Open 2/2", "Close 1/2", "Close 2/2", "Direction", "Quality", "Excluded", "Simulated", "Firmware", "Exposure error (stops)", "Device path", "Sensor width (mm)", "Sensor height (mm)", "Frame width (mm)", "Frame height (mm)"]
+    static let headers = ["Reading", "Reading ID", "Received", "Setting (1/s)", "Speed (1/s)", "Time (ms)", "Open (ms)", "Close (ms)", "Open ext", "Close ext", "Speed Bot. L.", "Time Bot. L.", "Speed Top R.", "Time Top R.", "Open 1/2", "Open 2/2", "Close 1/2", "Close 2/2", "Direction", "Quality", "Excluded", "Simulated", "Firmware", "Exposure error (stops)", "Device path", "Sensor width (mm)", "Sensor height (mm)", "Frame width (mm)", "Frame height (mm)", "Reading source", "Tester model", "Tester name", "Tester UUID", "Tester serial", "USB identity", "Tester calibration date", "Tester calibration notes", "Entered value", "Entered unit", "Baby mode", "Illumination E0 (unitless)", "Series illumination E0 (unitless)", "Manual notes", "Calibrated optimal distance (mm)"]
 
     static func table(_ records: [MeasurementRecord], separator: String = ",", readingNumbers: [UUID: Int] = [:]) -> String {
         let date = ISO8601DateFormatter()
@@ -358,13 +490,23 @@ enum SessionExport {
         var rows = [headers]
         for (index, record) in records.enumerated() {
             let r = record.result
-            rows.append([String(readingNumbers[record.id] ?? index + 1), record.id.uuidString, date.string(from: record.capturedAt), String(record.nominalDenominator),
+            let tester = record.tester
+            let manual = record.manual
+            var row: [String] = [String(readingNumbers[record.id] ?? index + 1), record.id.uuidString, date.string(from: record.capturedAt), String(record.nominalDenominator),
                          number(r.center.reciprocalSeconds), number(r.center.durationMS), number(r.openingTravelMS), number(r.closingTravelMS),
                          number(r.openingFullFrameMS), number(r.closingFullFrameMS), number(r.bottomLeft.reciprocalSeconds), number(r.bottomLeft.durationMS),
                          number(r.topRight.reciprocalSeconds), number(r.topRight.durationMS), number(r.openingFirstSegmentMS), number(r.openingSecondSegmentMS),
                          number(r.closingFirstSegmentMS), number(r.closingSecondSegmentMS), record.direction.rawValue, r.quality.rawValue,
-                         String(record.isExcluded), String(record.isDemo), record.packet.firmware_version, number(r.exposureErrorStops),
-                         record.devicePath ?? "", String(record.sensorWidthMM), String(record.sensorHeightMM), String(record.frameWidthMM), String(record.frameHeightMM)])
+                         String(record.isExcluded), String(record.isDemo), record.firmwareVersion, number(r.exposureErrorStops),
+                         record.devicePath ?? "", manual == nil ? String(record.sensorWidthMM) : "", manual == nil ? String(record.sensorHeightMM) : "", manual == nil ? String(record.frameWidthMM) : "", manual == nil ? String(record.frameHeightMM) : ""]
+            row.append(contentsOf: [record.isDemo ? "Demo" : (record.isManual ? "Manual" : "USB"),
+                         tester?.model.displayName ?? (record.packet == nil ? "" : TesterModel.shutterLover.displayName),
+                         tester?.name ?? "", tester?.id?.uuidString ?? "", tester?.serialNumber ?? "", tester?.usbIdentity?.stableIdentityKey ?? "",
+                         tester?.calibrationDate.map { date.string(from: $0) } ?? "", tester?.calibrationNotes ?? "",
+                         number(manual?.enteredValue), manual?.unit.rawValue ?? "", manual?.mode.rawValue ?? "",
+                         number(manual?.illumination), number(manual?.seriesIllumination), manual?.notes ?? "",
+                         number(tester?.calibratedOptimalDistanceMM)])
+            rows.append(row)
         }
         return rows.map { $0.map(escape).joined(separator: separator) }.joined(separator: "\n") + "\n"
     }

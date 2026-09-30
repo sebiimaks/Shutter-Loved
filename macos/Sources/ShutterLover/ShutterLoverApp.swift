@@ -18,6 +18,8 @@ struct ShutterLoverApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Add Camera…", action: model.newCamera).keyboardShortcut("n", modifiers: [.command, .option])
                 Button("New Measurement Session") { model.newSession(demo: false) }.keyboardShortcut("n")
+                Button("New Baby Tester Test") { model.newManualSession(cameraID: model.showCameraLibrary ? model.selectedCameraID : nil) }
+                Button("My Testers…") { model.showTesters = true }
                 Button("New Demo Session") { model.newSession(demo: true) }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Divider()
                 Button("Import Armarium Camera Catalogue…", action: model.importCameraCatalogue).keyboardShortcut("o")
@@ -53,6 +55,10 @@ struct ShutterLoverApp: App {
             CommandGroup(replacing: .help) {
                 Button("Tester Instructions") { model.showGuide = true }.keyboardShortcut("?", modifiers: .command)
             }
+        }
+        Settings {
+            FlangeDistanceSettingsView()
+                .environmentObject(model)
         }
     }
 }

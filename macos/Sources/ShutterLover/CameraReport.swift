@@ -81,19 +81,17 @@ enum CameraReport {
             }
             text("Operator: \(value(session.operatorName ?? "")) · Light: \(value(session.lightSource ?? ""))")
             text("Conditions: \(value(session.testConditions ?? ""))")
+            text("Tester used: \(session.testerSummary)")
             let tolerance = session.toleranceStops ?? (1.0 / 3.0)
             text(String(format: "Chosen timing tolerance: ±%.3f stops. This is an operator comparison rule, not an overall camera grade.", tolerance))
             let complete = session.records.filter { !$0.isExcluded && $0.result.quality == .complete }
-            let groups = Dictionary(grouping: complete) { "\($0.nominalDenominator)|\($0.direction.rawValue)" }
-            let rows = groups.values.sorted {
-                if $0[0].nominalDenominator == $1[0].nominalDenominator { return $0[0].direction.rawValue < $1[0].direction.rawValue }
-                return $0[0].nominalDenominator < $1[0].nominalDenominator
-            }
-            text("Center exposure by setting", size: 13, bold: true)
+            let rows = CameraResultGroup.groups(for: session)
+            let tableTitle = session.records.contains(where: \.isManual) ? "Exposure by setting and measurement method" : "Center exposure by setting"
+            text(tableTitle, size: 13, bold: true)
             // Each column has a real frame; spaces in a proportional font cannot
             // align values with their headings or contain longer custom settings.
             let columns: [(x: CGFloat, width: CGFloat)] = [(40, 150), (202, 86), (300, 90), (402, 82), (496, 59)]
-            let headings = ["Setting / direction", "Mean", "Difference", "SD", "Count"]
+            let headings = ["Setting / tester / method", "Mean", "Difference", "SD", "Count"]
             func tableRow(_ cells: [String], heading: Bool = false) {
                 let attributed = cells.map { cell in
                     let paragraph = NSMutableParagraphStyle()
@@ -113,7 +111,7 @@ enum CameraReport {
                 if y - rowHeight < 60 {
                     endPage()
                     beginPage()
-                    text("Center exposure by setting (continued)", size: 13, bold: true)
+                    text(tableTitle + " (continued)", size: 13, bold: true)
                     if !heading { tableRow(headings, heading: true) }
                 }
                 if heading {
@@ -136,28 +134,39 @@ enum CameraReport {
             }
             if !rows.isEmpty { tableRow(headings, heading: true) }
             for group in rows {
-                let durations = group.compactMap { $0.result.center.durationMS }
-                guard let first = group.first, !durations.isEmpty else { continue }
-                let mean = durations.reduce(0, +) / Double(durations.count)
-                let sd = durations.count > 1 ? sqrt(durations.reduce(0) { $0 + pow($1 - mean, 2) } / Double(durations.count - 1)) : nil
-                let stops = log2(mean * first.nominalDenominator / 1000)
-                let sdText = sd.map { String(format: "%.3f ms", $0) } ?? "—"
-                let setting = "\(MeasurementFormat.speed(first.nominalDenominator)) · \(first.direction.title)"
+                let stops = group.errorStops
+                let sdText = group.sampleSD.map { String(format: "%.3f ms", $0) } ?? "—"
+                let setting = "\(MeasurementFormat.speed(group.denominator)) · \(group.direction.title)\n\(group.contextDescription)"
                     + (abs(stops) > tolerance ? "\nOutside chosen range" : "")
-                tableRow([setting, String(format: "%.3f ms", mean), String(format: "%+.3f stops", stops), sdText, "n=\(durations.count)"])
+                tableRow([setting, String(format: "%.3f ms", group.meanMS), String(format: "%+.3f stops", stops), sdText, "n=\(group.count)"])
             }
             y -= 8
             if rows.isEmpty { text("No included complete measurements are available.") }
             let excluded = session.records.filter(\.isExcluded).count
             let incomplete = session.records.filter { !$0.isExcluded && $0.result.quality != .complete }.count
-            text("\(complete.count) included complete readings · \(excluded) excluded · \(incomplete) partial or invalid. Grouping keeps curtain directions separate.", size: 9)
+            text("\(complete.count) included complete readings · \(excluded) excluded · \(incomplete) partial or invalid. Grouping keeps settings, directions, tester identities, measurement sources, modes and recorded calibration distances separate.", size: 9)
             text("Positive differences mean longer exposure. Sample standard deviation (SD) describes repeatability and requires at least two readings. Missing measurements are never treated as zero.", size: 9)
             let planned = session.plannedSpeeds ?? camera.plannedSpeeds
             text("Planned settings: \(planned.map { MeasurementFormat.speed($0) }.joined(separator: ", ")). Target: \(session.repeatsPerSpeed ?? 3) readings per speed.", size: 9)
-            text("Tester: Shutter Lover. Host timestamps record receipt time. Sensor geometry is 32 × 20 mm; current full-frame estimates support 36 × 24 mm only.", size: 9)
-            text("Firmware: \(Set(session.records.map { $0.packet.firmware_version }).sorted().joined(separator: ", "))", size: 9)
+            if session.records.contains(where: { !$0.isManual }) {
+                text("USB timestamps record receipt time. Shutter Lover sensor geometry is 32 × 20 mm; current full-frame estimates support 36 × 24 mm only.", size: 9)
+            }
+            text("Firmware: \(value(Set(session.records.map(\.firmwareVersion).filter { !$0.isEmpty }).sorted().joined(separator: ", ")))", size: 9)
+            if session.records.contains(where: \.isManual) {
+                text("Manual readings", size: 12, bold: true)
+                text("Manual timestamps are operator-recorded. No raw USB events, corner exposures or curtain travel are available. Mk II effective exposure is illumination-dependent and must not be interpreted as a three-sensor timing measurement.", size: 9)
+                for (index, record) in session.records.enumerated() where record.isManual {
+                    let status = record.isExcluded ? "Excluded" : "Included"
+                    text("Reading \(index + 1) · \(status) · \(record.capturedAt.formatted(date: .abbreviated, time: .shortened)) · \(record.testerDescription)", bold: true)
+                    text(record.manualProvenanceDescription ?? "", size: 9)
+                    text("Recorded setting: \(MeasurementFormat.speed(record.nominalDenominator)) · \(record.measurementLabel): \(MeasurementFormat.milliseconds(record.result.center.durationMS))", size: 9)
+                    // Keep the complete evidence identifier together, so a line
+                    // break inside its hyphens cannot obstruct reading or copying.
+                    text("Reading UUID: \(record.id.uuidString.lowercased())", size: 9)
+                }
+            }
             if !session.notes.isEmpty { text("Test notes", size: 12, bold: true); text(session.notes) }
-            text("Original packets, corrections and individual readings are retained in the complete camera archive. This report summarises the selected test only.", size: 9)
+            text("Original manual entries, packets where available, corrections and individual readings are retained in the complete camera archive. This report summarises the selected test only.", size: 9)
         } else {
             text("No tests recorded", size: 16, bold: true)
             text("This camera has no measurement evidence yet.")

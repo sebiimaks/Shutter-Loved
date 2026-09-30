@@ -6,7 +6,7 @@ import ImageIO
 /// A full-fidelity local backup/copy format, distinct from the deliberately limited tester interchange.
 struct PortableCameraArchive: Codable {
     var format = "com.shutterlover.camera-archive"
-    var version = 1
+    var version = 2
     var sourceLibraryID: UUID
     var exportedAt = Date()
     var camera: CameraProfile
@@ -17,7 +17,7 @@ struct PortableCameraArchive: Codable {
     static func decode(_ data: Data) throws -> Self {
         guard data.count <= 64 * 1024 * 1024 else { throw SessionStoreError.tooLarge }
         let result = try SessionStore.decoder().decode(Self.self, from: data)
-        guard result.format == "com.shutterlover.camera-archive", result.version == 1 else {
+        guard result.format == "com.shutterlover.camera-archive", (1...2).contains(result.version) else {
             throw SessionStoreError.invalid("Unsupported camera archive format or version.")
         }
         try SessionStore.validateLibrary(CameraLibraryArchive(libraryID: result.sourceLibraryID, cameras: [result.camera], sessions: result.sessions))

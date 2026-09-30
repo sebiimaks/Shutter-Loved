@@ -40,6 +40,35 @@ public struct MeasurementResult: Codable, Equatable, Sendable {
     public let quality: ReadingQuality
     public let issues: [String]
 
+    /// A complete single-sensor measurement has no curtain travel or corner
+    /// timing. The absence of those metrics does not make it a partial reading.
+    public static func manualResult(durationSeconds: Double, nominalDenominator: Double) -> MeasurementResult {
+        guard durationSeconds.isFinite, (0.000001...1_000).contains(durationSeconds) else {
+            return unavailableResult(issues: ["Entered exposure must be between 1 microsecond and 1,000 seconds."])
+        }
+        var issues: [String] = []
+        var stops: Double?
+        var percent: Double?
+        if nominalDenominator.isFinite, nominalDenominator > 0 {
+            let difference = log2(durationSeconds) + log2(nominalDenominator)
+            stops = difference.isFinite ? difference : nil
+            let percentage = (durationSeconds * nominalDenominator - 1) * 100
+            percent = percentage.isFinite ? percentage : nil
+        } else {
+            issues.append("Camera setting must be a positive, finite reciprocal exposure to calculate its difference.")
+        }
+        let unavailable = SensorExposure(durationMS: nil, reciprocalSeconds: nil)
+        return MeasurementResult(
+            center: SensorExposure(durationMS: durationSeconds * 1_000, reciprocalSeconds: 1 / durationSeconds),
+            bottomLeft: unavailable, topRight: unavailable,
+            openingTravelMS: nil, closingTravelMS: nil, openingFullFrameMS: nil, closingFullFrameMS: nil,
+            openingFirstSegmentMS: nil, openingSecondSegmentMS: nil,
+            closingFirstSegmentMS: nil, closingSecondSegmentMS: nil,
+            exposureErrorStops: stops, exposureErrorPercent: percent,
+            quality: .complete, issues: issues
+        )
+    }
+
     public static func calculate(
         packet: MeasurementPacket,
         direction: CurtainDirection,
