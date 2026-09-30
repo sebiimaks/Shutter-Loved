@@ -499,13 +499,15 @@ enum SessionExport {
                          number(r.closingFirstSegmentMS), number(r.closingSecondSegmentMS), record.direction.rawValue, r.quality.rawValue,
                          String(record.isExcluded), String(record.isDemo), record.firmwareVersion, number(r.exposureErrorStops),
                          record.devicePath ?? "", manual == nil ? String(record.sensorWidthMM) : "", manual == nil ? String(record.sensorHeightMM) : "", manual == nil ? String(record.frameWidthMM) : "", manual == nil ? String(record.frameHeightMM) : ""]
-            row.append(contentsOf: [record.isDemo ? "Demo" : (record.isManual ? "Manual" : "USB"),
+            let testerFields: [String] = [record.isDemo ? "Demo" : (record.isManual ? "Manual" : "USB"),
                          tester?.model.displayName ?? (record.packet == nil ? "" : TesterModel.shutterLover.displayName),
                          tester?.name ?? "", tester?.id?.uuidString ?? "", tester?.serialNumber ?? "", tester?.usbIdentity?.stableIdentityKey ?? "",
-                         tester?.calibrationDate.map { date.string(from: $0) } ?? "", tester?.calibrationNotes ?? "",
-                         number(manual?.enteredValue), manual?.unit.rawValue ?? "", manual?.mode.rawValue ?? "",
-                         number(manual?.illumination), number(manual?.seriesIllumination), manual?.notes ?? "",
-                         number(tester?.calibratedOptimalDistanceMM)])
+                         tester?.calibrationDate.map { date.string(from: $0) } ?? "", tester?.calibrationNotes ?? ""]
+            let manualFields: [String] = [number(manual?.enteredValue), manual?.unit.rawValue ?? "", manual?.mode.rawValue ?? "",
+                         number(manual?.illumination), number(manual?.seriesIllumination), manual?.notes ?? ""]
+            row.append(contentsOf: testerFields)
+            row.append(contentsOf: manualFields)
+            row.append(number(tester?.calibratedOptimalDistanceMM))
             rows.append(row)
         }
         return rows.map { $0.map(escape).joined(separator: separator) }.joined(separator: "\n") + "\n"
